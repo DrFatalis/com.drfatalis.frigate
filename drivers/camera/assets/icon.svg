@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<!--
+  Ceiling-mount dome surveillance camera — single even-odd compound path.
+  No background; Homey applies brandColor.
+  Regions (outside → in):
+    mounting plate   → filled
+    support arm      → filled
+    housing ring     → filled
+    dome hemisphere  → filled
+    C1 (r=100) gap  → empty  (lens recess)
+    C2 (r=80) ring  → filled (outer lens ring)
+    C3 (r=52) glass → empty  (lens glass)
+    C4 (r=22) iris  → filled (aperture dot)
+-->
+<path fill-rule="evenodd" d="
+  M 192,20 H 320 Q 332,20 332,32 V 58 Q 332,70 320,70 H 192 Q 180,70 180,58 V 32 Q 180,20 192,20 Z
+  M 232,70 H 280 V 140 H 232 Z
+  M 66,140 H 446 Q 468,140 468,162 V 198 Q 468,220 446,220 H 66 Q 44,220 44,198 V 162 Q 44,140 66,140 Z
+  M 44,220 H 468 A 212,212 0 0,1 44,220 Z
+  M 156,330 A 100,100 0 0,1 356,330 A 100,100 0 0,1 156,330 Z
+  M 176,330 A 80,80 0 0,1 336,330 A 80,80 0 0,1 176,330 Z
+  M 204,330 A 52,52 0 0,1 308,330 A 52,52 0 0,1 204,330 Z
+  M 234,330 A 22,22 0 0,1 278,330 A 22,22 0 0,1 234,330 Z
+"/>
+</svg>

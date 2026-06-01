@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    .camera-list { margin: 8px 0 16px; }
+    .camera-btn {
+      display: block;
+      width: 100%;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+      text-align: left;
+      background: #f0f4f8;
+      border: 1px solid #d0d8e0;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1em;
+    }
+    .camera-btn:hover { background: #e0eaf4; border-color: #00a0e1; }
+    .separator { color: #888; font-size: 0.85em; margin: 16px 0 8px; }
+  </style>
+</head>
+<body>
+
+<div id="discoveredSection" style="display:none;">
+  <p data-i18n="pair.selectCamera" style="font-weight:bold;margin:0 0 8px;"></p>
+  <div class="camera-list" id="cameraList"></div>
+  <p class="separator" data-i18n="pair.orManual"></p>
+</div>
+
+<div class="homey-form-group">
+  <label class="homey-form-label" for="manualCamera" data-i18n="pair.manualCamera"></label>
+  <input class="homey-form-input" id="manualCamera" type="text" placeholder="doorbell" value="" />
+</div>
+
+<div class="homey-form-group" id="statusGroup" style="display:none;">
+  <label class="homey-form-label" id="statusText"></label>
+</div>
+
+<button id="addBtn" class="homey-button-primary-full" data-i18n="pair.addCamera"></button>
+
+<script type="application/javascript">
+  Homey.setTitle(Homey.__('pair.cameraTitle'));
+
+  var addBtn = document.getElementById('addBtn');
+  var statusGroup = document.getElementById('statusGroup');
+  var statusText = document.getElementById('statusText');
+  var manualInput = document.getElementById('manualCamera');
+
+  function showStatus(msg, isError) {
+    statusText.textContent = msg;
+    statusText.style.color = isError ? '#e74c3c' : '#27ae60';
+    statusGroup.style.display = 'block';
+  }
+
+  // Retrieve stored MQTT settings + discovered cameras from driver
+  Homey.emit('get_pair_settings').then(function (settings) {
+    if (settings.cameras && settings.cameras.length > 0) {
+      var section = document.getElementById('discoveredSection');
+      var list = document.getElementById('cameraList');
+      section.style.display = 'block';
+
+      settings.cameras.forEach(function (name) {
+        var btn = document.createElement('button');
+        btn.className = 'camera-btn';
+        btn.textContent = '📷 ' + name;
+        btn.addEventListener('click', function () {
+          manualInput.value = name;
+        });
+        list.appendChild(btn);
+      });
+    }
+
+    // Store settings for use in createDevice
+    window._pairSettings = settings;
+  }).catch(function () {
+    // Settings retrieval failed — pairing can still continue with manual entry
+    window._pairSettings = {};
+  });
+
+  function addCamera(cameraName) {
+    if (!cameraName || !cameraName.trim()) {
+      Homey.alert(Homey.__('pair.alertEmptyCameraName'));
+      return;
+    }
+
+    cameraName = cameraName.trim();
+    var s = window._pairSettings || {};
+
+    addBtn.disabled = true;
+    showStatus(Homey.__('pair.adding'), false);
+
+    Homey.createDevice({
+      name: cameraName,
+      data: { id: 'frigate-camera-' + cameraName },
+      settings: {
+        mqtt_url:          s.mqtt_url          || '',
+        mqtt_username:     s.mqtt_username     || '',
+        mqtt_password:     s.mqtt_password     || '',
+        mqtt_topic_prefix: s.mqtt_topic_prefix || 'frigate',
+        camera_name:       cameraName,
+        frigate_url:       s.frigate_url       || '',
+        label_filter:      '',
+      }
+    })
+      .then(function () {
+        Homey.done();
+      })
+      .catch(function (err) {
+        addBtn.disabled = false;
+        showStatus((err && err.message) ? err.message : Homey.__('pair.addFailed'), true);
+      });
+  }
+
+  addBtn.addEventListener('click', function () {
+    addCamera(manualInput.value);
+  });
+
+  manualInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') addCamera(manualInput.value);
+  });
+</script>
+
+</body>
+</html>

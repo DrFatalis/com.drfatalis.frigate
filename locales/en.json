@@ -1,0 +1,30 @@
+{
+  "device": {
+    "unavailable": "Cannot reach Frigate (MQTT disconnected)"
+  },
+  "pair": {
+    "title": "Frigate NVR — Connect via MQTT",
+    "sectionMQTT": "MQTT Broker",
+    "mqttUrl": "MQTT Broker URL",
+    "mqttUrlHint": "Must match the broker Frigate is configured to use. Use mqtt:// for plain or mqtts:// for TLS.",
+    "mqttUsername": "MQTT Username (optional)",
+    "mqttPassword": "MQTT Password (optional)",
+    "mqttPrefix": "Frigate topic prefix",
+    "mqttPrefixHint": "The topic_prefix set in Frigate's config.yml (default: frigate)",
+    "sectionOptional": "Optional",
+    "frigateUrl": "Frigate URL (for snapshot & clip links in flows)",
+    "frigateUrlHint": "e.g. http://192.168.1.100:5000 — only used to build snapshot/clip URLs in flow tokens",
+    "connect": "Connect & discover cameras",
+    "connecting": "Connecting to MQTT broker and discovering cameras…",
+    "connectFailed": "Connection failed. Check your MQTT broker URL and credentials.",
+    "alertInvalidMqttUrl": "Invalid MQTT URL. Must start with mqtt:// or mqtts://",
+    "cameraTitle": "Select or enter camera",
+    "selectCamera": "Cameras discovered from Frigate:",
+    "orManual": "— or enter a camera name manually —",
+    "manualCamera": "Camera name",
+    "addCamera": "Add camera",
+    "adding": "Adding camera…",
+    "addFailed": "Failed to add camera",
+    "alertEmptyCameraName": "Camera name cannot be empty"
+  }
+}
