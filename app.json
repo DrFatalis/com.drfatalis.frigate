@@ -23,9 +23,9 @@
     "xlarge": "/assets/images/xlarge.png"
   },
   "author": {
-    "name": "Maxime Salecroix",
-    "email": "msalecroix@msx-it-solutions.com"
+    "name": "Maxime Salecroix"
   },
+  "support": "mailto:msalecroix@msx-it-solutions.com",
   "flow": {
     "triggers": [
       {
@@ -189,80 +189,77 @@
         ]
       },
       {
-        "id": "enable-detection",
+        "id": "set-detection",
         "title": {
-          "en": "Enable object detection"
+          "en": "Set object detection"
+        },
+        "titleFormatted": {
+          "en": "Set object detection to [[enabled]]"
         },
         "args": [
           {
             "type": "device",
             "name": "device",
             "filter": "driver_id=camera"
+          },
+          {
+            "type": "dropdown",
+            "name": "enabled",
+            "title": { "en": "State" },
+            "values": [
+              { "id": "true", "label": { "en": "Enabled" } },
+              { "id": "false", "label": { "en": "Disabled" } }
+            ]
           }
         ]
       },
       {
-        "id": "disable-detection",
+        "id": "set-recording",
         "title": {
-          "en": "Disable object detection"
+          "en": "Set recording"
+        },
+        "titleFormatted": {
+          "en": "Set recording to [[enabled]]"
         },
         "args": [
           {
             "type": "device",
             "name": "device",
             "filter": "driver_id=camera"
+          },
+          {
+            "type": "dropdown",
+            "name": "enabled",
+            "title": { "en": "State" },
+            "values": [
+              { "id": "true", "label": { "en": "Enabled" } },
+              { "id": "false", "label": { "en": "Disabled" } }
+            ]
           }
         ]
       },
       {
-        "id": "enable-recording",
+        "id": "set-snapshots",
         "title": {
-          "en": "Enable recording"
+          "en": "Set snapshots"
+        },
+        "titleFormatted": {
+          "en": "Set snapshots to [[enabled]]"
         },
         "args": [
           {
             "type": "device",
             "name": "device",
             "filter": "driver_id=camera"
-          }
-        ]
-      },
-      {
-        "id": "disable-recording",
-        "title": {
-          "en": "Disable recording"
-        },
-        "args": [
+          },
           {
-            "type": "device",
-            "name": "device",
-            "filter": "driver_id=camera"
-          }
-        ]
-      },
-      {
-        "id": "enable-snapshots",
-        "title": {
-          "en": "Enable snapshots"
-        },
-        "args": [
-          {
-            "type": "device",
-            "name": "device",
-            "filter": "driver_id=camera"
-          }
-        ]
-      },
-      {
-        "id": "disable-snapshots",
-        "title": {
-          "en": "Disable snapshots"
-        },
-        "args": [
-          {
-            "type": "device",
-            "name": "device",
-            "filter": "driver_id=camera"
+            "type": "dropdown",
+            "name": "enabled",
+            "title": { "en": "State" },
+            "values": [
+              { "id": "true", "label": { "en": "Enabled" } },
+              { "id": "false", "label": { "en": "Disabled" } }
+            ]
           }
         ]
       },
@@ -360,9 +357,16 @@
         {
           "id": "frigate_url",
           "type": "text",
-          "label": { "en": "Frigate URL (optional — for snapshot/clip links)" },
+          "label": { "en": "Frigate URL (optional — for snapshot/clip links in flows)" },
           "value": "",
-          "hint": { "en": "If set, snapshot_url and clip_url tokens in flows will be populated. e.g. http://192.168.1.100:5000" }
+          "hint": { "en": "External or local URL used to build snapshot_url and clip_url flow tokens. e.g. https://frigate.example.com" }
+        },
+        {
+          "id": "frigate_local_url",
+          "type": "text",
+          "label": { "en": "Frigate local URL (optional — for live camera image)" },
+          "value": "",
+          "hint": { "en": "Internal URL without auth used to fetch the live image on the device card. e.g. http://192.168.1.100:5000" }
         },
         {
           "id": "label_filter",

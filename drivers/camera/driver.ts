@@ -19,6 +19,7 @@ interface PairSettings {
   mqtt_password: string;
   mqtt_topic_prefix: string;
   frigate_url: string;
+  frigate_local_url: string;
 }
 
 class CameraDriver extends Homey.Driver {
@@ -30,6 +31,7 @@ class CameraDriver extends Homey.Driver {
     mqtt_password: '',
     mqtt_topic_prefix: 'frigate',
     frigate_url: '',
+    frigate_local_url: '',
   };
 
   async onInit() {
@@ -42,39 +44,21 @@ class CameraDriver extends Homey.Driver {
       });
 
     this.homey.flow
-      .getActionCard('enable-detection')
-      .registerRunListener(async (args: { device: CameraDevice }) => {
-        args.device.setDetection(true);
+      .getActionCard('set-detection')
+      .registerRunListener(async (args: { device: CameraDevice; enabled: 'true' | 'false' }) => {
+        args.device.setDetection(args.enabled === 'true');
       });
 
     this.homey.flow
-      .getActionCard('disable-detection')
-      .registerRunListener(async (args: { device: CameraDevice }) => {
-        args.device.setDetection(false);
+      .getActionCard('set-recording')
+      .registerRunListener(async (args: { device: CameraDevice; enabled: 'true' | 'false' }) => {
+        args.device.setRecording(args.enabled === 'true');
       });
 
     this.homey.flow
-      .getActionCard('enable-recording')
-      .registerRunListener(async (args: { device: CameraDevice }) => {
-        args.device.setRecording(true);
-      });
-
-    this.homey.flow
-      .getActionCard('disable-recording')
-      .registerRunListener(async (args: { device: CameraDevice }) => {
-        args.device.setRecording(false);
-      });
-
-    this.homey.flow
-      .getActionCard('enable-snapshots')
-      .registerRunListener(async (args: { device: CameraDevice }) => {
-        args.device.setSnapshots(true);
-      });
-
-    this.homey.flow
-      .getActionCard('disable-snapshots')
-      .registerRunListener(async (args: { device: CameraDevice }) => {
-        args.device.setSnapshots(false);
+      .getActionCard('set-snapshots')
+      .registerRunListener(async (args: { device: CameraDevice; enabled: 'true' | 'false' }) => {
+        args.device.setSnapshots(args.enabled === 'true');
       });
 
     this.homey.flow
@@ -105,6 +89,7 @@ class CameraDriver extends Homey.Driver {
       mqtt_password: string;
       mqtt_topic_prefix: string;
       frigate_url: string;
+      frigate_local_url: string;
     }) => {
       const prefix = data.mqtt_topic_prefix?.trim() || 'frigate';
 
@@ -124,6 +109,7 @@ class CameraDriver extends Homey.Driver {
         mqtt_password: data.mqtt_password ?? '',
         mqtt_topic_prefix: prefix,
         frigate_url: data.frigate_url?.replace(/\/+$/, '') ?? '',
+        frigate_local_url: data.frigate_local_url?.replace(/\/+$/, '') ?? '',
       };
     });
 

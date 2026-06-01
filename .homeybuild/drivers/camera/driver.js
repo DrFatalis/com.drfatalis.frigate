@@ -15,6 +15,7 @@ class CameraDriver extends homey_1.default.Driver {
             mqtt_password: '',
             mqtt_topic_prefix: 'frigate',
             frigate_url: '',
+            frigate_local_url: '',
         };
     }
     async onInit() {
@@ -25,34 +26,19 @@ class CameraDriver extends homey_1.default.Driver {
             args.device.restart();
         });
         this.homey.flow
-            .getActionCard('enable-detection')
+            .getActionCard('set-detection')
             .registerRunListener(async (args) => {
-            args.device.setDetection(true);
+            args.device.setDetection(args.enabled === 'true');
         });
         this.homey.flow
-            .getActionCard('disable-detection')
+            .getActionCard('set-recording')
             .registerRunListener(async (args) => {
-            args.device.setDetection(false);
+            args.device.setRecording(args.enabled === 'true');
         });
         this.homey.flow
-            .getActionCard('enable-recording')
+            .getActionCard('set-snapshots')
             .registerRunListener(async (args) => {
-            args.device.setRecording(true);
-        });
-        this.homey.flow
-            .getActionCard('disable-recording')
-            .registerRunListener(async (args) => {
-            args.device.setRecording(false);
-        });
-        this.homey.flow
-            .getActionCard('enable-snapshots')
-            .registerRunListener(async (args) => {
-            args.device.setSnapshots(true);
-        });
-        this.homey.flow
-            .getActionCard('disable-snapshots')
-            .registerRunListener(async (args) => {
-            args.device.setSnapshots(false);
+            args.device.setSnapshots(args.enabled === 'true');
         });
         this.homey.flow
             .getActionCard('suspend-notifications')
@@ -73,7 +59,7 @@ class CameraDriver extends homey_1.default.Driver {
     async onPair(session) {
         // Step 1: validate broker connection + attempt camera discovery
         session.setHandler('validate_credentials', async (data) => {
-            var _a, _b, _c, _d, _e;
+            var _a, _b, _c, _d, _e, _f, _g;
             const prefix = ((_a = data.mqtt_topic_prefix) === null || _a === void 0 ? void 0 : _a.trim()) || 'frigate';
             // discoverFrigateCameras rejects only on hard broker errors;
             // returns [] if Frigate is not yet publishing / discovery timed out.
@@ -85,6 +71,7 @@ class CameraDriver extends homey_1.default.Driver {
                 mqtt_password: (_c = data.mqtt_password) !== null && _c !== void 0 ? _c : '',
                 mqtt_topic_prefix: prefix,
                 frigate_url: (_e = (_d = data.frigate_url) === null || _d === void 0 ? void 0 : _d.replace(/\/+$/, '')) !== null && _e !== void 0 ? _e : '',
+                frigate_local_url: (_g = (_f = data.frigate_local_url) === null || _f === void 0 ? void 0 : _f.replace(/\/+$/, '')) !== null && _g !== void 0 ? _g : '',
             };
         });
         // Step 2: camera view requests stored settings + discovered camera list

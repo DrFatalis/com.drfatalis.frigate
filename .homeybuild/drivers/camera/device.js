@@ -4,6 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const homey_1 = __importDefault(require("homey"));
+const http_1 = __importDefault(require("http"));
+const https_1 = __importDefault(require("https"));
 const MQTTClient_1 = require("../../lib/MQTTClient");
 class CameraDevice extends homey_1.default.Device {
     constructor() {
@@ -15,6 +17,7 @@ class CameraDevice extends homey_1.default.Device {
             mqtt_topic_prefix: 'frigate',
             camera_name: '',
             frigate_url: '',
+            frigate_local_url: '',
             label_filter: '',
         };
         this.mqtt = null;
@@ -38,11 +41,12 @@ class CameraDevice extends homey_1.default.Device {
     }
     // ---------- Helpers ----------
     loadSettings() {
-        var _a, _b, _c;
+        var _a, _b, _c, _d, _e;
         this.settings = this.getSettings();
         if (!((_a = this.settings.mqtt_topic_prefix) === null || _a === void 0 ? void 0 : _a.trim()))
             this.settings.mqtt_topic_prefix = 'frigate';
         this.settings.frigate_url = (_c = (_b = this.settings.frigate_url) === null || _b === void 0 ? void 0 : _b.replace(/\/+$/, '')) !== null && _c !== void 0 ? _c : '';
+        this.settings.frigate_local_url = (_e = (_d = this.settings.frigate_local_url) === null || _d === void 0 ? void 0 : _d.replace(/\/+$/, '')) !== null && _e !== void 0 ? _e : '';
     }
     get p() { return this.settings.mqtt_topic_prefix; }
     get cam() { return this.settings.camera_name; }
@@ -59,6 +63,22 @@ class CameraDevice extends homey_1.default.Device {
     clipUrl(eventId) {
         const base = this.settings.frigate_url;
         return base ? `${base}/api/events/${eventId}/clip.mp4` : '';
+    }
+    fetchBuffer(url) {
+        return new Promise((resolve, reject) => {
+            const get = url.startsWith('https://') ? https_1.default.get : http_1.default.get;
+            get(url, (res) => {
+                if (res.statusCode !== 200) {
+                    res.resume();
+                    reject(new Error(`HTTP ${res.statusCode}`));
+                    return;
+                }
+                const chunks = [];
+                res.on('data', (chunk) => chunks.push(chunk));
+                res.on('end', () => resolve(Buffer.concat(chunks)));
+                res.on('error', reject);
+            }).on('error', reject);
+        });
     }
     // ---------- Init / teardown ----------
     async onInit() {
@@ -78,7 +98,23 @@ class CameraDevice extends homey_1.default.Device {
         try {
             this.cameraImage = await this.homey.images.createImage();
             this.cameraImage.setStream(async (imageStream) => {
-                if (this.latestSnapshot) {
+                const base = this.settings.frigate_local_url || this.settings.frigate_url;
+                if (base) {
+                    // Fetch the always-available latest frame from Frigate's HTTP API.
+                    // Buffer the full response before writing — more reliable than piping
+                    // chunked HTTP responses directly into Homey's image stream.
+                    const url = `${base}/api/${this.cam}/latest.jpg`;
+                    try {
+                        const buffer = await this.fetchBuffer(url);
+                        imageStream.end(buffer);
+                    }
+                    catch (err) {
+                        this.error('Camera image fetch failed:', err);
+                        imageStream.end();
+                    }
+                }
+                else if (this.latestSnapshot) {
+                    // No URL configured — serve the last MQTT JPEG snapshot we buffered.
                     imageStream.end(this.latestSnapshot);
                 }
                 else {
@@ -86,7 +122,7 @@ class CameraDevice extends homey_1.default.Device {
                 }
             });
             // Attach image to the device card (visible in the Homey app device tile)
-            await this.setAlbumArtImage(this.cameraImage);
+            await this.setCameraImage('snapshot', 'Latest Snapshot', this.cameraImage);
         }
         catch (err) {
             this.error('Failed to create camera image:', err);
@@ -269,6 +305,7 @@ class CameraDevice extends homey_1.default.Device {
         this.log(`Camera "${this.cam}" added`);
     }
     async onSettings({}) {
+        var _a;
         this.log('Settings changed — reconnecting MQTT');
         this.stopMQTT();
         this.loadSettings();
@@ -277,6 +314,7 @@ class CameraDevice extends homey_1.default.Device {
         this.recentDetections.clear();
         this.unreviewedCount = 0;
         this.startMQTT();
+        (_a = this.cameraImage) === null || _a === void 0 ? void 0 : _a.update().catch(() => { });
     }
     async onRenamed(name) {
         this.log(`Renamed to "${name}"`);

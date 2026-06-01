@@ -1,4 +1,6 @@
 import Homey from 'homey';
+import http from 'http';
+import https from 'https';
 import stream from 'stream';
 import { FrigateMQTTClient } from '../../lib/MQTTClient';
 
@@ -9,6 +11,7 @@ interface DeviceSettings {
   mqtt_topic_prefix: string;
   camera_name: string;
   frigate_url: string;
+  frigate_local_url: string;
   label_filter: string;
 }
 
@@ -52,6 +55,7 @@ class CameraDevice extends Homey.Device {
     mqtt_topic_prefix: 'frigate',
     camera_name: '',
     frigate_url: '',
+    frigate_local_url: '',
     label_filter: '',
   };
 
@@ -85,6 +89,7 @@ class CameraDevice extends Homey.Device {
     this.settings = this.getSettings() as DeviceSettings;
     if (!this.settings.mqtt_topic_prefix?.trim()) this.settings.mqtt_topic_prefix = 'frigate';
     this.settings.frigate_url = this.settings.frigate_url?.replace(/\/+$/, '') ?? '';
+    this.settings.frigate_local_url = this.settings.frigate_local_url?.replace(/\/+$/, '') ?? '';
   }
 
   private get p(): string { return this.settings.mqtt_topic_prefix; }
@@ -103,6 +108,23 @@ class CameraDevice extends Homey.Device {
   private clipUrl(eventId: string): string {
     const base = this.settings.frigate_url;
     return base ? `${base}/api/events/${eventId}/clip.mp4` : '';
+  }
+
+  private fetchBuffer(url: string): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const get = url.startsWith('https://') ? https.get : http.get;
+      get(url, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          reject(new Error(`HTTP ${res.statusCode}`));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+        res.on('error', reject);
+      }).on('error', reject);
+    });
   }
 
   // ---------- Init / teardown ----------
@@ -126,14 +148,28 @@ class CameraDevice extends Homey.Device {
     try {
       this.cameraImage = await this.homey.images.createImage();
       this.cameraImage.setStream(async (imageStream: stream.Writable) => {
-        if (this.latestSnapshot) {
+        const base = this.settings.frigate_local_url || this.settings.frigate_url;
+        if (base) {
+          // Fetch the always-available latest frame from Frigate's HTTP API.
+          // Buffer the full response before writing — more reliable than piping
+          // chunked HTTP responses directly into Homey's image stream.
+          const url = `${base}/api/${this.cam}/latest.jpg`;
+          try {
+            const buffer = await this.fetchBuffer(url);
+            imageStream.end(buffer);
+          } catch (err) {
+            this.error('Camera image fetch failed:', err);
+            imageStream.end();
+          }
+        } else if (this.latestSnapshot) {
+          // No URL configured — serve the last MQTT JPEG snapshot we buffered.
           imageStream.end(this.latestSnapshot);
         } else {
           imageStream.end();
         }
       });
       // Attach image to the device card (visible in the Homey app device tile)
-      await this.setAlbumArtImage(this.cameraImage);
+      await this.setCameraImage('snapshot', 'Latest Snapshot', this.cameraImage);
     } catch (err) {
       this.error('Failed to create camera image:', err);
     }
@@ -341,6 +377,7 @@ class CameraDevice extends Homey.Device {
     this.recentDetections.clear();
     this.unreviewedCount = 0;
     this.startMQTT();
+    this.cameraImage?.update().catch(() => {});
   }
 
   async onRenamed(name: string) {

@@ -94,13 +94,14 @@
       name: cameraName,
       data: { id: 'frigate-camera-' + cameraName },
       settings: {
-        mqtt_url:          s.mqtt_url          || '',
-        mqtt_username:     s.mqtt_username     || '',
-        mqtt_password:     s.mqtt_password     || '',
-        mqtt_topic_prefix: s.mqtt_topic_prefix || 'frigate',
-        camera_name:       cameraName,
-        frigate_url:       s.frigate_url       || '',
-        label_filter:      '',
+        mqtt_url:           s.mqtt_url           || '',
+        mqtt_username:      s.mqtt_username      || '',
+        mqtt_password:      s.mqtt_password      || '',
+        mqtt_topic_prefix:  s.mqtt_topic_prefix  || 'frigate',
+        camera_name:        cameraName,
+        frigate_url:        s.frigate_url        || '',
+        frigate_local_url:  s.frigate_local_url  || '',
+        label_filter:       '',
       }
     })
       .then(function () {
