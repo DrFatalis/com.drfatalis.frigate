@@ -19,6 +19,7 @@ class CameraDevice extends homey_1.default.Device {
             frigate_url: '',
             frigate_local_url: '',
             label_filter: '',
+            live_stream_interval: 500,
         };
         this.mqtt = null;
         this.destroyed = false;
@@ -27,6 +28,9 @@ class CameraDevice extends homey_1.default.Device {
         // Homey image object — serves the buffered JPEG and shows on device card
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         this.cameraImage = null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.liveStreamImage = null;
+        this.liveStreamTimer = null;
         // In-memory rolling window: label → array of unix timestamps (seconds)
         // Used to answer the label-detected-recently condition without any HTTP call
         this.recentDetections = new Map();
@@ -96,6 +100,7 @@ class CameraDevice extends homey_1.default.Device {
         await this.setCapabilityValue('event_count', 0);
         await this.setCapabilityValue('unreviewed_alerts', 0);
         await this.initCameraImage();
+        await this.initLiveStreamImage();
         this.startMQTT();
     }
     async initCameraImage() {
@@ -126,6 +131,56 @@ class CameraDevice extends homey_1.default.Device {
         }
         catch (err) {
             this.error('Failed to create camera image:', err);
+        }
+    }
+    async initLiveStreamImage() {
+        const base = this.settings.frigate_local_url;
+        if (!base)
+            return;
+        try {
+            if (!this.liveStreamImage) {
+                this.liveStreamImage = await this.homey.images.createImage();
+                await this.setCameraImage('live_stream', 'Live Stream', this.liveStreamImage);
+            }
+            if (base.startsWith('https://')) {
+                // HTTPS: Homey app fetches the MJPEG URL directly — true live stream.
+                this.stopLiveStreamTimer();
+                this.liveStreamImage.setUrl(`${base}/api/${this.cam}/stream`);
+            }
+            else {
+                // HTTP: setUrl is rejected by the SDK; poll latest.jpg on a timer instead.
+                this.liveStreamImage.setStream(async (imageStream) => {
+                    const url = `${base}/api/${this.cam}/latest.jpg`;
+                    try {
+                        const buffer = await this.fetchBuffer(url);
+                        imageStream.end(buffer);
+                    }
+                    catch (err) {
+                        this.error('Live stream fetch failed:', err);
+                        imageStream.end();
+                    }
+                });
+                this.startLiveStreamTimer();
+            }
+            this.liveStreamImage.update().catch(() => { });
+        }
+        catch (err) {
+            this.error('Failed to create live stream image:', err);
+        }
+    }
+    startLiveStreamTimer() {
+        var _a;
+        this.stopLiveStreamTimer();
+        const interval = Math.max(200, (_a = this.settings.live_stream_interval) !== null && _a !== void 0 ? _a : 500);
+        this.liveStreamTimer = setInterval(() => {
+            var _a;
+            (_a = this.liveStreamImage) === null || _a === void 0 ? void 0 : _a.update().catch(() => { });
+        }, interval);
+    }
+    stopLiveStreamTimer() {
+        if (this.liveStreamTimer !== null) {
+            clearInterval(this.liveStreamTimer);
+            this.liveStreamTimer = null;
         }
     }
     async updateLabelImage(label) {
@@ -359,6 +414,7 @@ class CameraDevice extends homey_1.default.Device {
         var _a;
         this.log('Settings changed — reconnecting MQTT');
         this.stopMQTT();
+        this.stopLiveStreamTimer();
         this.loadSettings();
         this.seenEventIds.clear();
         this.seenReviewIds.clear();
@@ -368,6 +424,7 @@ class CameraDevice extends homey_1.default.Device {
         this.unreviewedCount = 0;
         this.startMQTT();
         (_a = this.cameraImage) === null || _a === void 0 ? void 0 : _a.update().catch(() => { });
+        await this.initLiveStreamImage();
     }
     async onRenamed(name) {
         this.log(`Renamed to "${name}"`);
@@ -376,6 +433,7 @@ class CameraDevice extends homey_1.default.Device {
         this.log(`Camera "${this.cam}" deleted`);
         this.destroyed = true;
         this.stopMQTT();
+        this.stopLiveStreamTimer();
     }
 }
 module.exports = CameraDevice;

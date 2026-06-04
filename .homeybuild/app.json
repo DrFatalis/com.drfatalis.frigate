@@ -1,6 +1,6 @@
 {
   "id": "com.drfatalis.frigate",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "compatibility": ">=5.0.0",
   "sdk": 3,
   "brandColor": "#00a0e1",
@@ -474,6 +474,18 @@
           "hint": {
             "en": "Only fire the object-detected trigger for these labels, e.g. person,car,dog"
           }
+        },
+        {
+          "id": "live_stream_interval",
+          "type": "number",
+          "label": {
+            "en": "Live stream refresh interval (ms)"
+          },
+          "value": 500,
+          "hint": {
+            "en": "How often the live stream image refreshes, in milliseconds (HTTP only). Minimum 200."
+          },
+          "attr": { "min": 200, "max": 5000, "step": 100 }
         }
       ]
     }

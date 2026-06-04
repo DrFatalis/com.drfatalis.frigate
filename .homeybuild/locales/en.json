@@ -20,14 +20,17 @@
     "connecting": "Connecting to MQTT broker and discovering cameras…",
     "connectFailed": "Connection failed. Check your MQTT broker URL and credentials.",
     "alertInvalidMqttUrl": "Invalid MQTT URL. Must start with mqtt:// or mqtts://",
-    "cameraTitle": "Select or enter camera",
+    "cameraTitle": "Select cameras",
     "selectCamera": "Cameras discovered from Frigate:",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
     "orManual": "— or enter a camera name manually —",
-    "manualCamera": "Camera name",
-    "addCamera": "Add camera",
-    "adding": "Adding camera…",
+    "manualCamera": "Additional cameras (comma-separated)",
+    "manualCameraHint": "Enter names not in the list above, or enter all names manually if none were discovered.",
+    "addCameras": "Add cameras",
+    "adding": "Adding cameras…",
     "addFailed": "Failed to add camera",
-    "alertEmptyCameraName": "Camera name cannot be empty"
+    "alertEmptyCameraName": "Select at least one camera or enter a name manually"
   },
   "settings": {
     "mqtt_url": "MQTT Broker URL",
