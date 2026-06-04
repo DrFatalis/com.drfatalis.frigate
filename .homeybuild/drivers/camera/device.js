@@ -46,6 +46,8 @@ class CameraDevice extends homey_1.default.Device {
         // Dedup guards
         this.seenEventIds = new Set();
         this.seenReviewIds = new Set();
+        // Prevents re-registering MQTT handlers on every reconnect
+        this.subscriptionsSetup = false;
     }
     // ---------- Helpers ----------
     loadSettings() {
@@ -205,11 +207,15 @@ class CameraDevice extends homey_1.default.Device {
         var _a;
         (_a = this.mqtt) === null || _a === void 0 ? void 0 : _a.disconnect();
         this.mqtt = null;
+        this.subscriptionsSetup = false;
     }
     // ---------- MQTT connection ----------
     async onMQTTConnected() {
         this.log(`"${this.cam}" MQTT connected`);
         await this.setAvailable();
+        if (this.subscriptionsSetup)
+            return;
+        this.subscriptionsSetup = true;
         // Frigate server availability
         this.mqtt.subscribe(`${this.p}/available`, (_t, payload) => {
             if (payload === 'online')
@@ -282,10 +288,8 @@ class CameraDevice extends homey_1.default.Device {
         const ev = msg.after;
         if (ev.camera !== this.cam)
             return;
-        if (this.seenEventIds.has(ev.id))
-            return;
-        this.seenEventIds.add(ev.id);
-        // Rotate daily counter at midnight
+        // Rotate daily counter at midnight before the dedup check so the clear
+        // doesn't wipe the ID we're about to add (which would defeat the guard).
         const today = new Date().getDate();
         if (today !== this.dailyCountDate) {
             this.dailyEventCount = 0;
@@ -293,6 +297,9 @@ class CameraDevice extends homey_1.default.Device {
             this.seenEventIds.clear();
             this.recentDetections.clear();
         }
+        if (this.seenEventIds.has(ev.id))
+            return;
+        this.seenEventIds.add(ev.id);
         this.dailyEventCount++;
         this.setCapabilityValue('event_count', this.dailyEventCount).catch(() => { });
         // Track label in rolling window for label-detected-recently condition
@@ -331,7 +338,7 @@ class CameraDevice extends homey_1.default.Device {
                 this.error('Failed to create event image:', err);
             }
         }
-        this.homey.flow.getDeviceTriggerCard('object-detected').trigger(this, {
+        const triggerTokens = {
             label: (_d = ev.label) !== null && _d !== void 0 ? _d : '',
             sub_label: (_e = ev.sub_label) !== null && _e !== void 0 ? _e : '',
             zones,
@@ -341,7 +348,13 @@ class CameraDevice extends homey_1.default.Device {
             clip_url: this.clipUrl(ev.id),
             snapshot: eventSnapshot,
             device_name: this.getName(),
-        }).catch((err) => this.error('object-detected trigger error:', err));
+        };
+        this.homey.flow.getDeviceTriggerCard('object-detected')
+            .trigger(this, triggerTokens)
+            .catch((err) => this.error('object-detected trigger error:', err));
+        this.homey.flow.getTriggerCard('object-detected-any')
+            .trigger(triggerTokens)
+            .catch((err) => this.error('object-detected-any trigger error:', err));
         if (this.seenEventIds.size > 500) {
             this.seenEventIds = new Set([...this.seenEventIds].slice(-250));
         }

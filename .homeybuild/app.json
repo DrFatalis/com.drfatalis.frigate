@@ -1,6 +1,6 @@
 {
   "id": "com.drfatalis.frigate",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "compatibility": ">=5.0.0",
   "sdk": 3,
   "brandColor": "#00a0e1",
@@ -28,6 +28,85 @@
   "support": "mailto:msalecroix@msx-it-solutions.com",
   "flow": {
     "triggers": [
+      {
+        "id": "object-detected-any",
+        "title": {
+          "en": "Any camera detected an object"
+        },
+        "tokens": [
+          {
+            "name": "label",
+            "type": "string",
+            "title": {
+              "en": "Label"
+            },
+            "example": "person"
+          },
+          {
+            "name": "sub_label",
+            "type": "string",
+            "title": {
+              "en": "Sub-label"
+            },
+            "example": "John Doe"
+          },
+          {
+            "name": "zones",
+            "type": "string",
+            "title": {
+              "en": "Zones"
+            },
+            "example": "driveway, yard"
+          },
+          {
+            "name": "score",
+            "type": "number",
+            "title": {
+              "en": "Confidence (%)"
+            },
+            "example": 87
+          },
+          {
+            "name": "event_id",
+            "type": "string",
+            "title": {
+              "en": "Event ID"
+            },
+            "example": "1a2b3c4d-5678"
+          },
+          {
+            "name": "snapshot_url",
+            "type": "string",
+            "title": {
+              "en": "Snapshot URL"
+            },
+            "example": "http://192.168.1.100:5000/api/events/abc-123/snapshot.jpg"
+          },
+          {
+            "name": "clip_url",
+            "type": "string",
+            "title": {
+              "en": "Clip URL"
+            },
+            "example": "http://192.168.1.100:5000/api/events/abc-123/clip.mp4"
+          },
+          {
+            "name": "snapshot",
+            "type": "image",
+            "title": {
+              "en": "Snapshot"
+            }
+          },
+          {
+            "name": "device_name",
+            "type": "string",
+            "title": {
+              "en": "Device name"
+            },
+            "example": "Front Door Camera"
+          }
+        ]
+      },
       {
         "id": "object-detected",
         "title": {
@@ -485,7 +564,11 @@
           "hint": {
             "en": "How often the live stream image refreshes, in milliseconds (HTTP only). Minimum 200."
           },
-          "attr": { "min": 200, "max": 5000, "step": 100 }
+          "attr": {
+            "min": 200,
+            "max": 5000,
+            "step": 100
+          }
         }
       ]
     }

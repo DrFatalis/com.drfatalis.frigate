@@ -93,6 +93,9 @@ class CameraDevice extends Homey.Device {
   private seenEventIds: Set<string> = new Set();
   private seenReviewIds: Set<string> = new Set();
 
+  // Prevents re-registering MQTT handlers on every reconnect
+  private subscriptionsSetup: boolean = false;
+
   // ---------- Helpers ----------
 
   private loadSettings(): void {
@@ -258,6 +261,7 @@ class CameraDevice extends Homey.Device {
   private stopMQTT(): void {
     this.mqtt?.disconnect();
     this.mqtt = null;
+    this.subscriptionsSetup = false;
   }
 
   // ---------- MQTT connection ----------
@@ -265,6 +269,9 @@ class CameraDevice extends Homey.Device {
   private async onMQTTConnected(): Promise<void> {
     this.log(`"${this.cam}" MQTT connected`);
     await this.setAvailable();
+
+    if (this.subscriptionsSetup) return;
+    this.subscriptionsSetup = true;
 
     // Frigate server availability
     this.mqtt!.subscribe(`${this.p}/available`, (_t, payload) => {
@@ -335,10 +342,8 @@ class CameraDevice extends Homey.Device {
     if (msg.type !== 'new') return;
     const ev = msg.after;
     if (ev.camera !== this.cam) return;
-    if (this.seenEventIds.has(ev.id)) return;
-    this.seenEventIds.add(ev.id);
-
-    // Rotate daily counter at midnight
+    // Rotate daily counter at midnight before the dedup check so the clear
+    // doesn't wipe the ID we're about to add (which would defeat the guard).
     const today = new Date().getDate();
     if (today !== this.dailyCountDate) {
       this.dailyEventCount = 0;
@@ -346,6 +351,9 @@ class CameraDevice extends Homey.Device {
       this.seenEventIds.clear();
       this.recentDetections.clear();
     }
+
+    if (this.seenEventIds.has(ev.id)) return;
+    this.seenEventIds.add(ev.id);
     this.dailyEventCount++;
     this.setCapabilityValue('event_count', this.dailyEventCount).catch(() => {});
 
@@ -384,7 +392,7 @@ class CameraDevice extends Homey.Device {
       }
     }
 
-    this.homey.flow.getDeviceTriggerCard('object-detected').trigger(this, {
+    const triggerTokens = {
       label: ev.label ?? '',
       sub_label: ev.sub_label ?? '',
       zones,
@@ -394,7 +402,15 @@ class CameraDevice extends Homey.Device {
       clip_url: this.clipUrl(ev.id),
       snapshot: eventSnapshot,
       device_name: this.getName(),
-    }).catch((err: unknown) => this.error('object-detected trigger error:', err));
+    };
+
+    this.homey.flow.getDeviceTriggerCard('object-detected')
+      .trigger(this, triggerTokens)
+      .catch((err: unknown) => this.error('object-detected trigger error:', err));
+
+    this.homey.flow.getTriggerCard('object-detected-any')
+      .trigger(triggerTokens)
+      .catch((err: unknown) => this.error('object-detected-any trigger error:', err));
 
     if (this.seenEventIds.size > 500) {
       this.seenEventIds = new Set([...this.seenEventIds].slice(-250));
