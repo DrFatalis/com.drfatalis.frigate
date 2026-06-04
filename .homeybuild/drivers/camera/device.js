@@ -58,7 +58,7 @@ class CameraDevice extends homey_1.default.Device {
     }
     snapshotUrl(eventId) {
         const base = this.settings.frigate_url;
-        return base ? `${base}/api/events/${eventId}/snapshot.jpg` : '';
+        return base ? `${base}/api/events/${eventId}/snapshot.jpg?bbox=1` : '';
     }
     clipUrl(eventId) {
         const base = this.settings.frigate_url;
@@ -172,7 +172,9 @@ class CameraDevice extends homey_1.default.Device {
             catch { /* ignore */ }
         });
         // New detection events
-        this.mqtt.subscribe(`${this.p}/events`, (_t, payload) => this.handleEvent(payload));
+        this.mqtt.subscribe(`${this.p}/events`, (_t, payload) => {
+            this.handleEvent(payload).catch((err) => this.error('handleEvent error:', err));
+        });
         // New review items
         this.mqtt.subscribe(`${this.p}/reviews`, (_t, payload) => this.handleReview(payload));
         // Snapshot images: frigate/{camera}/{label}/snapshot publishes raw JPEG bytes.
@@ -189,7 +191,7 @@ class CameraDevice extends homey_1.default.Device {
         await this.setCapabilityValue('alarm_motion', false);
     }
     // ---------- MQTT message handlers ----------
-    handleEvent(payload) {
+    async handleEvent(payload) {
         var _a, _b, _c, _d, _e, _f, _g;
         let msg;
         try {
@@ -226,15 +228,42 @@ class CameraDevice extends homey_1.default.Device {
         if (this.labelFilter.length > 0 && !this.labelFilter.includes(labelKey))
             return;
         const zones = [...new Set([...((_b = ev.current_zones) !== null && _b !== void 0 ? _b : []), ...((_c = ev.entered_zones) !== null && _c !== void 0 ? _c : [])])].join(', ');
+        // Build a per-event snapshot image. The stream is fetched lazily (when Homey
+        // requests it, e.g. to attach to an email), by which time Frigate has the snapshot ready.
+        // Falls back to the latest buffered MQTT snapshot if the HTTP fetch fails.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let eventSnapshot = this.cameraImage;
+        const snapUrl = this.snapshotUrl(ev.id);
+        if (snapUrl) {
+            try {
+                const img = await this.homey.images.createImage();
+                img.setStream(async (imageStream) => {
+                    var _a;
+                    try {
+                        const buffer = await this.fetchBuffer(snapUrl);
+                        imageStream.end(buffer);
+                    }
+                    catch (err) {
+                        this.error('Event snapshot fetch failed:', err);
+                        imageStream.end((_a = this.latestSnapshot) !== null && _a !== void 0 ? _a : Buffer.alloc(0));
+                    }
+                });
+                eventSnapshot = img;
+            }
+            catch (err) {
+                this.error('Failed to create event image:', err);
+            }
+        }
         this.homey.flow.getDeviceTriggerCard('object-detected').trigger(this, {
             label: (_d = ev.label) !== null && _d !== void 0 ? _d : '',
             sub_label: (_e = ev.sub_label) !== null && _e !== void 0 ? _e : '',
             zones,
             score: Math.round(((_g = (_f = ev.top_score) !== null && _f !== void 0 ? _f : ev.score) !== null && _g !== void 0 ? _g : 0) * 100),
             event_id: ev.id,
-            snapshot_url: this.snapshotUrl(ev.id),
+            snapshot_url: snapUrl,
             clip_url: this.clipUrl(ev.id),
-            snapshot: this.cameraImage, // Homey.Image — usable in notification flows
+            snapshot: eventSnapshot,
+            device_name: this.getName(),
         }).catch((err) => this.error('object-detected trigger error:', err));
         if (this.seenEventIds.size > 500) {
             this.seenEventIds = new Set([...this.seenEventIds].slice(-250));

@@ -80,6 +80,12 @@
             "name": "snapshot",
             "type": "image",
             "title": { "en": "Snapshot" }
+          },
+          {
+            "name": "device_name",
+            "type": "string",
+            "title": { "en": "Device name" },
+            "example": "Front Door Camera"
           }
         ],
         "args": [

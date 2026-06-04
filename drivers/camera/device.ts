@@ -102,7 +102,7 @@ class CameraDevice extends Homey.Device {
 
   private snapshotUrl(eventId: string): string {
     const base = this.settings.frigate_url;
-    return base ? `${base}/api/events/${eventId}/snapshot.jpg` : '';
+    return base ? `${base}/api/events/${eventId}/snapshot.jpg?bbox=1` : '';
   }
 
   private clipUrl(eventId: string): string {
@@ -229,7 +229,9 @@ class CameraDevice extends Homey.Device {
     });
 
     // New detection events
-    this.mqtt!.subscribe(`${this.p}/events`, (_t, payload) => this.handleEvent(payload));
+    this.mqtt!.subscribe(`${this.p}/events`, (_t, payload) => {
+      this.handleEvent(payload).catch((err: unknown) => this.error('handleEvent error:', err));
+    });
 
     // New review items
     this.mqtt!.subscribe(`${this.p}/reviews`, (_t, payload) => this.handleReview(payload));
@@ -250,7 +252,7 @@ class CameraDevice extends Homey.Device {
 
   // ---------- MQTT message handlers ----------
 
-  private handleEvent(payload: string): void {
+  private async handleEvent(payload: string): Promise<void> {
     let msg: FrigateEventPayload;
     try { msg = JSON.parse(payload); } catch { return; }
 
@@ -282,15 +284,40 @@ class CameraDevice extends Homey.Device {
 
     const zones = [...new Set([...(ev.current_zones ?? []), ...(ev.entered_zones ?? [])])].join(', ');
 
+    // Build a per-event snapshot image. The stream is fetched lazily (when Homey
+    // requests it, e.g. to attach to an email), by which time Frigate has the snapshot ready.
+    // Falls back to the latest buffered MQTT snapshot if the HTTP fetch fails.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let eventSnapshot: any = this.cameraImage;
+    const snapUrl = this.snapshotUrl(ev.id);
+    if (snapUrl) {
+      try {
+        const img = await this.homey.images.createImage();
+        img.setStream(async (imageStream: stream.Writable) => {
+          try {
+            const buffer = await this.fetchBuffer(snapUrl);
+            imageStream.end(buffer);
+          } catch (err) {
+            this.error('Event snapshot fetch failed:', err);
+            imageStream.end(this.latestSnapshot ?? Buffer.alloc(0));
+          }
+        });
+        eventSnapshot = img;
+      } catch (err) {
+        this.error('Failed to create event image:', err);
+      }
+    }
+
     this.homey.flow.getDeviceTriggerCard('object-detected').trigger(this, {
       label: ev.label ?? '',
       sub_label: ev.sub_label ?? '',
       zones,
       score: Math.round((ev.top_score ?? ev.score ?? 0) * 100),
       event_id: ev.id,
-      snapshot_url: this.snapshotUrl(ev.id),
+      snapshot_url: snapUrl,
       clip_url: this.clipUrl(ev.id),
-      snapshot: this.cameraImage,  // Homey.Image — usable in notification flows
+      snapshot: eventSnapshot,
+      device_name: this.getName(),
     }).catch((err: unknown) => this.error('object-detected trigger error:', err));
 
     if (this.seenEventIds.size > 500) {
