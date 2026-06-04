@@ -1,5 +1,8 @@
 {
   "1.0.0": {
     "en": "Initial release: connect Frigate NVR cameras to Homey via MQTT with motion detection, object alerts and camera control."
+  },
+  "1.0.1": {
+    "en": "Added BBox on snapshot image and device name to object detected tags"
   }
 }
