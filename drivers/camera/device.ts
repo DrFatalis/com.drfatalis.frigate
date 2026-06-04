@@ -72,6 +72,11 @@ class CameraDevice extends Homey.Device {
   // Used to answer the label-detected-recently condition without any HTTP call
   private recentDetections: Map<string, number[]> = new Map();
 
+  // Per-label snapshot images for the device-card image picker
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private labelImages: Map<string, any> = new Map();
+  private labelBuffers: Map<string, Buffer> = new Map();
+
   // Unreviewed alert counter (tracked from MQTT; reset when review_status=NONE)
   private unreviewedCount: number = 0;
 
@@ -150,9 +155,6 @@ class CameraDevice extends Homey.Device {
       this.cameraImage.setStream(async (imageStream: stream.Writable) => {
         const base = this.settings.frigate_local_url || this.settings.frigate_url;
         if (base) {
-          // Fetch the always-available latest frame from Frigate's HTTP API.
-          // Buffer the full response before writing — more reliable than piping
-          // chunked HTTP responses directly into Homey's image stream.
           const url = `${base}/api/${this.cam}/latest.jpg`;
           try {
             const buffer = await this.fetchBuffer(url);
@@ -162,7 +164,6 @@ class CameraDevice extends Homey.Device {
             imageStream.end();
           }
         } else if (this.latestSnapshot) {
-          // No URL configured — serve the last MQTT JPEG snapshot we buffered.
           imageStream.end(this.latestSnapshot);
         } else {
           imageStream.end();
@@ -173,6 +174,20 @@ class CameraDevice extends Homey.Device {
     } catch (err) {
       this.error('Failed to create camera image:', err);
     }
+  }
+
+  private async updateLabelImage(label: string): Promise<void> {
+    if (this.labelImages.has(label)) {
+      this.labelImages.get(label).update().catch(() => {});
+      return;
+    }
+    const img = await this.homey.images.createImage();
+    img.setStream(async (imageStream: stream.Writable) => {
+      imageStream.end(this.labelBuffers.get(label) ?? Buffer.alloc(0));
+    });
+    this.labelImages.set(label, img);
+    const title = `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+    await this.setCameraImage(`label_${label}`, `Latest ${title}`, img);
   }
 
   private startMQTT(): void {
@@ -237,10 +252,18 @@ class CameraDevice extends Homey.Device {
     this.mqtt!.subscribe(`${this.p}/reviews`, (_t, payload) => this.handleReview(payload));
 
     // Snapshot images: frigate/{camera}/{label}/snapshot publishes raw JPEG bytes.
-    // We buffer the latest one and serve it via the Homey Image API.
-    this.mqtt!.subscribeBinary(`${this.p}/${this.cam}/+/snapshot`, (_t, payload) => {
+    // Buffer the latest one for the live card image, and maintain a per-label
+    // image so the device card offers a picker ("Latest Person", "Latest Car", …).
+    this.mqtt!.subscribeBinary(`${this.p}/${this.cam}/+/snapshot`, (topic, payload) => {
       this.latestSnapshot = payload;
       this.cameraImage?.update().catch(() => {});
+      // topic format: {prefix}/{cam}/{label}/snapshot
+      const parts = topic.split('/');
+      const label = parts[parts.length - 2];
+      if (label) {
+        this.labelBuffers.set(label, payload);
+        this.updateLabelImage(label).catch((err: unknown) => this.error('Label image update failed:', err));
+      }
     });
   }
 
@@ -402,6 +425,8 @@ class CameraDevice extends Homey.Device {
     this.seenEventIds.clear();
     this.seenReviewIds.clear();
     this.recentDetections.clear();
+    this.labelImages.clear();
+    this.labelBuffers.clear();
     this.unreviewedCount = 0;
     this.startMQTT();
     this.cameraImage?.update().catch(() => {});

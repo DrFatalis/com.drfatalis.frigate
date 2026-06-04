@@ -1,6 +1,6 @@
 {
   "id": "com.drfatalis.frigate",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "compatibility": ">=5.0.0",
   "sdk": 3,
   "brandColor": "#00a0e1",
@@ -37,54 +37,72 @@
           {
             "name": "label",
             "type": "string",
-            "title": { "en": "Label" },
+            "title": {
+              "en": "Label"
+            },
             "example": "person"
           },
           {
             "name": "sub_label",
             "type": "string",
-            "title": { "en": "Sub-label" },
+            "title": {
+              "en": "Sub-label"
+            },
             "example": "John Doe"
           },
           {
             "name": "zones",
             "type": "string",
-            "title": { "en": "Zones" },
+            "title": {
+              "en": "Zones"
+            },
             "example": "driveway, yard"
           },
           {
             "name": "score",
             "type": "number",
-            "title": { "en": "Confidence (%)" },
+            "title": {
+              "en": "Confidence (%)"
+            },
             "example": 87
           },
           {
             "name": "event_id",
             "type": "string",
-            "title": { "en": "Event ID" },
+            "title": {
+              "en": "Event ID"
+            },
             "example": "1a2b3c4d-5678"
           },
           {
             "name": "snapshot_url",
             "type": "string",
-            "title": { "en": "Snapshot URL" },
+            "title": {
+              "en": "Snapshot URL"
+            },
             "example": "http://192.168.1.100:5000/api/events/abc-123/snapshot.jpg"
           },
           {
             "name": "clip_url",
             "type": "string",
-            "title": { "en": "Clip URL" },
+            "title": {
+              "en": "Clip URL"
+            },
             "example": "http://192.168.1.100:5000/api/events/abc-123/clip.mp4"
           },
           {
             "name": "snapshot",
             "type": "image",
-            "title": { "en": "Snapshot" }
+            "title": {
+              "en": "Snapshot"
+            }
           },
           {
             "name": "device_name",
             "type": "string",
-            "title": { "en": "Device name" },
+            "title": {
+              "en": "Device name"
+            },
             "example": "Front Door Camera"
           }
         ],
@@ -105,25 +123,33 @@
           {
             "name": "review_id",
             "type": "string",
-            "title": { "en": "Review ID" },
+            "title": {
+              "en": "Review ID"
+            },
             "example": "rev-abc123"
           },
           {
             "name": "severity",
             "type": "string",
-            "title": { "en": "Severity" },
+            "title": {
+              "en": "Severity"
+            },
             "example": "alert"
           },
           {
             "name": "objects",
             "type": "string",
-            "title": { "en": "Detected objects" },
+            "title": {
+              "en": "Detected objects"
+            },
             "example": "person, car"
           },
           {
             "name": "zones",
             "type": "string",
-            "title": { "en": "Zones" },
+            "title": {
+              "en": "Zones"
+            },
             "example": "driveway"
           }
         ],
@@ -154,12 +180,16 @@
           {
             "type": "text",
             "name": "label",
-            "placeholder": { "en": "person" }
+            "placeholder": {
+              "en": "person"
+            }
           },
           {
             "type": "number",
             "name": "minutes",
-            "placeholder": { "en": "5" },
+            "placeholder": {
+              "en": "5"
+            },
             "min": 1,
             "max": 60,
             "step": 1
@@ -211,10 +241,22 @@
           {
             "type": "dropdown",
             "name": "enabled",
-            "title": { "en": "State" },
+            "title": {
+              "en": "State"
+            },
             "values": [
-              { "id": "true", "label": { "en": "Enabled" } },
-              { "id": "false", "label": { "en": "Disabled" } }
+              {
+                "id": "true",
+                "label": {
+                  "en": "Enabled"
+                }
+              },
+              {
+                "id": "false",
+                "label": {
+                  "en": "Disabled"
+                }
+              }
             ]
           }
         ]
@@ -236,10 +278,22 @@
           {
             "type": "dropdown",
             "name": "enabled",
-            "title": { "en": "State" },
+            "title": {
+              "en": "State"
+            },
             "values": [
-              { "id": "true", "label": { "en": "Enabled" } },
-              { "id": "false", "label": { "en": "Disabled" } }
+              {
+                "id": "true",
+                "label": {
+                  "en": "Enabled"
+                }
+              },
+              {
+                "id": "false",
+                "label": {
+                  "en": "Disabled"
+                }
+              }
             ]
           }
         ]
@@ -261,10 +315,22 @@
           {
             "type": "dropdown",
             "name": "enabled",
-            "title": { "en": "State" },
+            "title": {
+              "en": "State"
+            },
             "values": [
-              { "id": "true", "label": { "en": "Enabled" } },
-              { "id": "false", "label": { "en": "Disabled" } }
+              {
+                "id": "true",
+                "label": {
+                  "en": "Enabled"
+                }
+              },
+              {
+                "id": "false",
+                "label": {
+                  "en": "Disabled"
+                }
+              }
             ]
           }
         ]
@@ -286,7 +352,9 @@
           {
             "type": "number",
             "name": "minutes",
-            "placeholder": { "en": "30" },
+            "placeholder": {
+              "en": "30"
+            },
             "min": 1,
             "max": 1440,
             "step": 1
@@ -331,55 +399,81 @@
         {
           "id": "mqtt_url",
           "type": "text",
-          "label": { "en": "MQTT Broker URL" },
+          "label": {
+            "en": "MQTT Broker URL"
+          },
           "value": "mqtt://192.168.1.100:1883",
-          "hint": { "en": "e.g. mqtt://192.168.1.100:1883 or mqtts://... for TLS" }
+          "hint": {
+            "en": "e.g. mqtt://192.168.1.100:1883 or mqtts://... for TLS"
+          }
         },
         {
           "id": "mqtt_username",
           "type": "text",
-          "label": { "en": "MQTT Username (optional)" },
+          "label": {
+            "en": "MQTT Username (optional)"
+          },
           "value": ""
         },
         {
           "id": "mqtt_password",
           "type": "password",
-          "label": { "en": "MQTT Password (optional)" },
+          "label": {
+            "en": "MQTT Password (optional)"
+          },
           "value": ""
         },
         {
           "id": "mqtt_topic_prefix",
           "type": "text",
-          "label": { "en": "Frigate topic prefix" },
+          "label": {
+            "en": "Frigate topic prefix"
+          },
           "value": "frigate",
-          "hint": { "en": "topic_prefix set in Frigate config (default: frigate)" }
+          "hint": {
+            "en": "topic_prefix set in Frigate config (default: frigate)"
+          }
         },
         {
           "id": "camera_name",
           "type": "text",
-          "label": { "en": "Camera name" },
+          "label": {
+            "en": "Camera name"
+          },
           "value": ""
         },
         {
           "id": "frigate_url",
           "type": "text",
-          "label": { "en": "Frigate URL (optional — for snapshot/clip links in flows)" },
+          "label": {
+            "en": "Frigate URL (optional — for snapshot/clip links in flows)"
+          },
           "value": "",
-          "hint": { "en": "External or local URL used to build snapshot_url and clip_url flow tokens. e.g. https://frigate.example.com" }
+          "hint": {
+            "en": "External or local URL used to build snapshot_url and clip_url flow tokens. e.g. https://frigate.example.com"
+          }
         },
         {
           "id": "frigate_local_url",
           "type": "text",
-          "label": { "en": "Frigate local URL (optional — for live camera image)" },
+          "label": {
+            "en": "Frigate local URL (optional — for live camera image)"
+          },
           "value": "",
-          "hint": { "en": "Internal URL without auth used to fetch the live image on the device card. e.g. http://192.168.1.100:5000" }
+          "hint": {
+            "en": "Internal URL without auth used to fetch the live image on the device card. e.g. http://192.168.1.100:5000"
+          }
         },
         {
           "id": "label_filter",
           "type": "text",
-          "label": { "en": "Label filter (comma-separated, empty = all)" },
+          "label": {
+            "en": "Label filter (comma-separated, empty = all)"
+          },
           "value": "",
-          "hint": { "en": "Only fire the object-detected trigger for these labels, e.g. person,car,dog" }
+          "hint": {
+            "en": "Only fire the object-detected trigger for these labels, e.g. person,car,dog"
+          }
         }
       ]
     }
@@ -387,7 +481,9 @@
   "capabilities": {
     "detection_fps": {
       "type": "number",
-      "title": { "en": "Detection FPS" },
+      "title": {
+        "en": "Detection FPS"
+      },
       "getable": true,
       "setable": false,
       "uiComponent": "sensor",
@@ -397,7 +493,9 @@
     },
     "event_count": {
       "type": "number",
-      "title": { "en": "Events today" },
+      "title": {
+        "en": "Events today"
+      },
       "getable": true,
       "setable": false,
       "uiComponent": "sensor",
@@ -406,7 +504,9 @@
     },
     "unreviewed_alerts": {
       "type": "number",
-      "title": { "en": "Unreviewed alerts" },
+      "title": {
+        "en": "Unreviewed alerts"
+      },
       "getable": true,
       "setable": false,
       "uiComponent": "sensor",
