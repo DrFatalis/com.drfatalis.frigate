@@ -4,5 +4,8 @@
   },
   "1.0.1": {
     "en": "Added BBox on snapshot image and device name to object detected tags"
+  },
+  "1.0.2": {
+    "en": "Split latest snapshot from object snapshots"
   }
 }
