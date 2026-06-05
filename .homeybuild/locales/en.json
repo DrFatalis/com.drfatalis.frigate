@@ -45,6 +45,8 @@
     "frigate_local_url": "Frigate local URL (optional — for live camera image)",
     "frigate_local_url_hint": "Internal URL used to fetch the live camera image (e.g. http://192.168.1.100:5000). Required if frigate_url goes through a reverse proxy that does not expose /api/{camera}/latest.jpg.",
     "label_filter": "Label filter (comma-separated, empty = all)",
-    "label_filter_hint": "Only fire the object-detected trigger for these labels, e.g. person,car,dog"
+    "label_filter_hint": "Only fire the object-detected trigger for these labels, e.g. person,car,dog",
+    "event_trigger_delay": "Object detected trigger delay (seconds)",
+    "event_trigger_delay_hint": "Once the object-detected trigger fires, it cannot fire again for this many seconds. Events ending within the cooldown window are discarded. Set to 0 to disable."
   }
 }

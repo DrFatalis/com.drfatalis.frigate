@@ -569,6 +569,22 @@
             "max": 5000,
             "step": 100
           }
+        },
+        {
+          "id": "event_trigger_delay",
+          "type": "number",
+          "label": {
+            "en": "Object detected trigger delay (seconds)"
+          },
+          "value": 5,
+          "hint": {
+            "en": "Once the object-detected trigger fires, it cannot fire again for this many seconds. Events ending within the cooldown window are discarded. Set to 0 to disable."
+          },
+          "attr": {
+            "min": 0,
+            "max": 60,
+            "step": 1
+          }
         }
       ]
     }

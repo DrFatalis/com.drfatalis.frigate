@@ -20,19 +20,17 @@ class CameraDevice extends homey_1.default.Device {
             frigate_local_url: '',
             label_filter: '',
             live_stream_interval: 500,
+            event_trigger_delay: 5,
         };
         this.mqtt = null;
         this.destroyed = false;
-        // Latest JPEG from frigate/{camera}/+/snapshot (binary MQTT payload)
         this.latestSnapshot = null;
-        // Homey image object — serves the buffered JPEG and shows on device card
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         this.cameraImage = null;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         this.liveStreamImage = null;
         this.liveStreamTimer = null;
         // In-memory rolling window: label → array of unix timestamps (seconds)
-        // Used to answer the label-detected-recently condition without any HTTP call
         this.recentDetections = new Map();
         // Per-label snapshot images for the device-card image picker
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,6 +44,8 @@ class CameraDevice extends homey_1.default.Device {
         // Dedup guards
         this.seenEventIds = new Set();
         this.seenReviewIds = new Set();
+        // Cooldown: unix ms timestamp of the last fired object-detected trigger
+        this.lastTriggerFiredAt = 0;
         // Prevents re-registering MQTT handlers on every reconnect
         this.subscriptionsSetup = false;
     }
@@ -93,10 +93,12 @@ class CameraDevice extends homey_1.default.Device {
     // ---------- Init / teardown ----------
     async onInit() {
         this.loadSettings();
-        this.log(`Camera "${this.cam}" initializing`);
+        this.log(`[${this.cam}] Initializing — broker: ${this.settings.mqtt_url}, prefix: "${this.p}", filter: "${this.settings.label_filter || 'none'}", cooldown: ${this.settings.event_trigger_delay}s`);
         for (const cap of ['alarm_motion', 'detection_fps', 'event_count', 'unreviewed_alerts']) {
-            if (!this.hasCapability(cap))
+            if (!this.hasCapability(cap)) {
                 await this.addCapability(cap);
+                this.log(`[${this.cam}] Added missing capability: ${cap}`);
+            }
         }
         await this.setCapabilityValue('alarm_motion', false);
         await this.setCapabilityValue('event_count', 0);
@@ -115,9 +117,10 @@ class CameraDevice extends homey_1.default.Device {
                     try {
                         const buffer = await this.fetchBuffer(url);
                         imageStream.end(buffer);
+                        this.log(`[${this.cam}] Camera image fetch succeeded (${url})`);
                     }
                     catch (err) {
-                        this.error('Camera image fetch failed:', err);
+                        this.error(`[${this.cam}] Camera image fetch failed (${url}):`, err);
                         imageStream.end();
                     }
                 }
@@ -128,29 +131,31 @@ class CameraDevice extends homey_1.default.Device {
                     imageStream.end();
                 }
             });
-            // Attach image to the device card (visible in the Homey app device tile)
             await this.setCameraImage('snapshot', 'Latest Snapshot', this.cameraImage);
+            this.log(`[${this.cam}] Camera snapshot image registered`);
         }
         catch (err) {
-            this.error('Failed to create camera image:', err);
+            this.error(`[${this.cam}] Failed to create camera image:`, err);
         }
     }
     async initLiveStreamImage() {
+        var _a;
         const base = this.settings.frigate_local_url;
-        if (!base)
+        if (!base) {
+            this.log(`[${this.cam}] No local URL configured — live stream image skipped`);
             return;
+        }
         try {
             if (!this.liveStreamImage) {
                 this.liveStreamImage = await this.homey.images.createImage();
                 await this.setCameraImage('live_stream', 'Live Stream', this.liveStreamImage);
             }
             if (base.startsWith('https://')) {
-                // HTTPS: Homey app fetches the MJPEG URL directly — true live stream.
                 this.stopLiveStreamTimer();
                 this.liveStreamImage.setUrl(`${base}/api/${this.cam}/stream`);
+                this.log(`[${this.cam}] Live stream: HTTPS MJPEG mode → ${base}/api/${this.cam}/stream`);
             }
             else {
-                // HTTP: setUrl is rejected by the SDK; poll latest.jpg on a timer instead.
                 this.liveStreamImage.setStream(async (imageStream) => {
                     const url = `${base}/api/${this.cam}/latest.jpg`;
                     try {
@@ -158,16 +163,18 @@ class CameraDevice extends homey_1.default.Device {
                         imageStream.end(buffer);
                     }
                     catch (err) {
-                        this.error('Live stream fetch failed:', err);
+                        this.error(`[${this.cam}] Live stream fetch failed (${url}):`, err);
                         imageStream.end();
                     }
                 });
+                const interval = Math.max(200, (_a = this.settings.live_stream_interval) !== null && _a !== void 0 ? _a : 500);
                 this.startLiveStreamTimer();
+                this.log(`[${this.cam}] Live stream: HTTP poll mode, interval ${interval}ms`);
             }
             this.liveStreamImage.update().catch(() => { });
         }
         catch (err) {
-            this.error('Failed to create live stream image:', err);
+            this.error(`[${this.cam}] Failed to create live stream image:`, err);
         }
     }
     startLiveStreamTimer() {
@@ -198,84 +205,84 @@ class CameraDevice extends homey_1.default.Device {
         this.labelImages.set(label, img);
         const title = `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
         await this.setCameraImage(`label_${label}`, `Latest ${title}`, img);
+        this.log(`[${this.cam}] Registered label image: "${label}"`);
     }
     startMQTT() {
+        this.log(`[${this.cam}] Starting MQTT client → ${this.settings.mqtt_url}`);
         this.mqtt = new MQTTClient_1.FrigateMQTTClient(this.settings.mqtt_url, this.settings.mqtt_username || undefined, this.settings.mqtt_password || undefined);
         this.mqtt.connect(() => this.onMQTTConnected(), () => this.onMQTTDisconnected());
     }
     stopMQTT() {
         var _a;
+        this.log(`[${this.cam}] Stopping MQTT client`);
         (_a = this.mqtt) === null || _a === void 0 ? void 0 : _a.disconnect();
         this.mqtt = null;
         this.subscriptionsSetup = false;
     }
     // ---------- MQTT connection ----------
     async onMQTTConnected() {
-        this.log(`"${this.cam}" MQTT connected`);
-        await this.setAvailable();
-        if (this.subscriptionsSetup)
-            return;
-        this.subscriptionsSetup = true;
-        // Frigate server availability
-        this.mqtt.subscribe(`${this.p}/available`, (_t, payload) => {
-            if (payload === 'online')
-                this.setAvailable().catch(() => { });
-            else
-                this.setUnavailable(this.homey.__('device.unavailable')).catch(() => { });
-        });
-        // Camera motion state
-        this.mqtt.subscribe(`${this.p}/${this.cam}/motion`, (_t, payload) => {
-            this.setCapabilityValue('alarm_motion', payload === 'ON').catch(() => { });
-        });
-        // Per-camera review status: NONE means all reviews viewed → reset counter
-        this.mqtt.subscribe(`${this.p}/${this.cam}/review_status`, (_t, payload) => {
-            if (payload === 'NONE') {
-                this.unreviewedCount = 0;
-                this.setCapabilityValue('unreviewed_alerts', 0).catch(() => { });
-            }
-        });
-        // Detection FPS from stats broadcast
-        this.mqtt.subscribe(`${this.p}/stats`, (_t, payload) => {
-            var _a, _b;
-            try {
-                const stats = JSON.parse(payload);
-                const fps = (_b = (_a = stats === null || stats === void 0 ? void 0 : stats.cameras) === null || _a === void 0 ? void 0 : _a[this.cam]) === null || _b === void 0 ? void 0 : _b.detection_fps;
-                if (typeof fps === 'number') {
-                    this.setCapabilityValue('detection_fps', fps).catch(() => { });
+        if (!this.subscriptionsSetup) {
+            this.subscriptionsSetup = true;
+            this.log(`[${this.cam}] MQTT connected — registering subscriptions`);
+            this.mqtt.subscribe(`${this.p}/available`, (_t, payload) => {
+                this.log(`[${this.cam}] Frigate server availability: ${payload}`);
+                if (payload === 'online')
+                    this.setAvailable().catch(() => { });
+                else
+                    this.setUnavailable(this.homey.__('device.unavailable')).catch(() => { });
+            });
+            this.mqtt.subscribe(`${this.p}/${this.cam}/motion`, (_t, payload) => {
+                this.log(`[${this.cam}] Motion state: ${payload}`);
+                this.setCapabilityValue('alarm_motion', payload === 'ON').catch(() => { });
+            });
+            this.mqtt.subscribe(`${this.p}/${this.cam}/review_status`, (_t, payload) => {
+                this.log(`[${this.cam}] Review status: ${payload}`);
+                if (payload === 'NONE') {
+                    this.unreviewedCount = 0;
+                    this.setCapabilityValue('unreviewed_alerts', 0).catch(() => { });
                 }
-            }
-            catch { /* ignore */ }
-        });
-        // New detection events
-        this.mqtt.subscribe(`${this.p}/events`, (_t, payload) => {
-            this.handleEvent(payload).catch((err) => this.error('handleEvent error:', err));
-        });
-        // New review items
-        this.mqtt.subscribe(`${this.p}/reviews`, (_t, payload) => this.handleReview(payload));
-        // Snapshot images: frigate/{camera}/{label}/snapshot publishes raw JPEG bytes.
-        // Buffer the latest one for the live card image, and maintain a per-label
-        // image so the device card offers a picker ("Latest Person", "Latest Car", …).
-        this.mqtt.subscribeBinary(`${this.p}/${this.cam}/+/snapshot`, (topic, payload) => {
-            var _a;
-            this.latestSnapshot = payload;
-            (_a = this.cameraImage) === null || _a === void 0 ? void 0 : _a.update().catch(() => { });
-            // topic format: {prefix}/{cam}/{label}/snapshot
-            const parts = topic.split('/');
-            const label = parts[parts.length - 2];
-            if (label) {
-                this.labelBuffers.set(label, payload);
-                this.updateLabelImage(label).catch((err) => this.error('Label image update failed:', err));
-            }
-        });
+            });
+            this.mqtt.subscribe(`${this.p}/stats`, (_t, payload) => {
+                var _a, _b;
+                try {
+                    const stats = JSON.parse(payload);
+                    const fps = (_b = (_a = stats === null || stats === void 0 ? void 0 : stats.cameras) === null || _a === void 0 ? void 0 : _a[this.cam]) === null || _b === void 0 ? void 0 : _b.detection_fps;
+                    if (typeof fps === 'number') {
+                        this.setCapabilityValue('detection_fps', fps).catch(() => { });
+                    }
+                }
+                catch { /* ignore */ }
+            });
+            this.mqtt.subscribe(`${this.p}/events`, (_t, payload) => {
+                this.handleEvent(payload).catch((err) => this.error(`[${this.cam}] handleEvent error:`, err));
+            });
+            this.mqtt.subscribe(`${this.p}/reviews`, (_t, payload) => this.handleReview(payload));
+            this.mqtt.subscribeBinary(`${this.p}/${this.cam}/+/snapshot`, (topic, payload) => {
+                var _a;
+                this.latestSnapshot = payload;
+                (_a = this.cameraImage) === null || _a === void 0 ? void 0 : _a.update().catch(() => { });
+                const parts = topic.split('/');
+                const label = parts[parts.length - 2];
+                if (label) {
+                    this.labelBuffers.set(label, payload);
+                    this.updateLabelImage(label).catch((err) => this.error(`[${this.cam}] Label image update failed:`, err));
+                }
+            });
+            this.log(`[${this.cam}] Subscriptions active`);
+        }
+        else {
+            this.log(`[${this.cam}] MQTT reconnected`);
+        }
+        await this.setAvailable();
     }
     async onMQTTDisconnected() {
-        this.log(`"${this.cam}" MQTT disconnected`);
+        this.log(`[${this.cam}] MQTT disconnected — device marked unavailable`);
         await this.setUnavailable(this.homey.__('device.unavailable'));
         await this.setCapabilityValue('alarm_motion', false);
     }
     // ---------- MQTT message handlers ----------
     async handleEvent(payload) {
-        var _a, _b, _c, _d, _e, _f, _g;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
         let msg;
         try {
             msg = JSON.parse(payload);
@@ -283,42 +290,59 @@ class CameraDevice extends homey_1.default.Device {
         catch {
             return;
         }
-        if (msg.type !== 'new')
+        if (msg.type !== 'end')
             return;
         const ev = msg.after;
         if (ev.camera !== this.cam)
             return;
-        // Rotate daily counter at midnight before the dedup check so the clear
-        // doesn't wipe the ID we're about to add (which would defeat the guard).
+        const score = Math.round(((_b = (_a = ev.top_score) !== null && _a !== void 0 ? _a : ev.score) !== null && _b !== void 0 ? _b : 0) * 100);
+        this.log(`[${this.cam}] Event ended: id=${ev.id} label="${ev.label}" score=${score}% sub_label="${(_c = ev.sub_label) !== null && _c !== void 0 ? _c : '-'}" zones=[${[...((_d = ev.current_zones) !== null && _d !== void 0 ? _d : []), ...((_e = ev.entered_zones) !== null && _e !== void 0 ? _e : [])].join(', ') || 'none'}] snapshot=${ev.has_snapshot} clip=${ev.has_clip}`);
+        // Discard stale retained/replayed events (ended more than 60 s ago)
+        if (ev.end_time !== null) {
+            const ageSec = Date.now() / 1000 - ev.end_time;
+            if (ageSec > 60) {
+                this.log(`[${this.cam}] Event ${ev.id} discarded — stale (ended ${ageSec.toFixed(0)}s ago, likely a retained MQTT message)`);
+                return;
+            }
+        }
+        // Rotate daily counter at midnight
         const today = new Date().getDate();
         if (today !== this.dailyCountDate) {
+            this.log(`[${this.cam}] Midnight rollover — resetting daily counters and dedup set`);
             this.dailyEventCount = 0;
             this.dailyCountDate = today;
             this.seenEventIds.clear();
             this.recentDetections.clear();
         }
-        if (this.seenEventIds.has(ev.id))
+        if (this.seenEventIds.has(ev.id)) {
+            this.log(`[${this.cam}] Event ${ev.id} discarded — duplicate`);
             return;
+        }
         this.seenEventIds.add(ev.id);
         this.dailyEventCount++;
         this.setCapabilityValue('event_count', this.dailyEventCount).catch(() => { });
-        // Track label in rolling window for label-detected-recently condition
-        const labelKey = ((_a = ev.label) !== null && _a !== void 0 ? _a : '').toLowerCase();
-        const nowSec = Date.now() / 1000;
+        // Track label using detection start time for label-detected-recently condition
+        const labelKey = ((_f = ev.label) !== null && _f !== void 0 ? _f : '').toLowerCase();
         if (!this.recentDetections.has(labelKey))
             this.recentDetections.set(labelKey, []);
-        this.recentDetections.get(labelKey).push(nowSec);
-        // Apply optional label filter before firing flow trigger
-        if (this.labelFilter.length > 0 && !this.labelFilter.includes(labelKey))
+        this.recentDetections.get(labelKey).push((_g = ev.start_time) !== null && _g !== void 0 ? _g : Date.now() / 1000);
+        // Apply optional label filter
+        if (this.labelFilter.length > 0 && !this.labelFilter.includes(labelKey)) {
+            this.log(`[${this.cam}] Event ${ev.id} discarded — label "${labelKey}" not in filter [${this.labelFilter.join(', ')}]`);
             return;
-        const zones = [...new Set([...((_b = ev.current_zones) !== null && _b !== void 0 ? _b : []), ...((_c = ev.entered_zones) !== null && _c !== void 0 ? _c : [])])].join(', ');
-        // Build a per-event snapshot image. The stream is fetched lazily (when Homey
-        // requests it, e.g. to attach to an email), by which time Frigate has the snapshot ready.
-        // Falls back to the latest buffered MQTT snapshot if the HTTP fetch fails.
+        }
+        const zones = [...new Set([...((_h = ev.current_zones) !== null && _h !== void 0 ? _h : []), ...((_j = ev.entered_zones) !== null && _j !== void 0 ? _j : [])])].join(', ');
+        const cooldownMs = Math.max(0, (_k = this.settings.event_trigger_delay) !== null && _k !== void 0 ? _k : 5) * 1000;
+        if (cooldownMs > 0 && Date.now() - this.lastTriggerFiredAt < cooldownMs) {
+            const remainingSec = ((cooldownMs - (Date.now() - this.lastTriggerFiredAt)) / 1000).toFixed(1);
+            this.log(`[${this.cam}] Event ${ev.id} discarded — cooldown active (${remainingSec}s remaining)`);
+            return;
+        }
+        this.lastTriggerFiredAt = Date.now();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let eventSnapshot = this.cameraImage;
         const snapUrl = this.snapshotUrl(ev.id);
-        if (snapUrl) {
+        if (snapUrl && ev.has_snapshot) {
             try {
                 const img = await this.homey.images.createImage();
                 img.setStream(async (imageStream) => {
@@ -326,35 +350,37 @@ class CameraDevice extends homey_1.default.Device {
                     try {
                         const buffer = await this.fetchBuffer(snapUrl);
                         imageStream.end(buffer);
+                        this.log(`[${this.cam}] Event snapshot fetch succeeded (${snapUrl})`);
                     }
                     catch (err) {
-                        this.error('Event snapshot fetch failed:', err);
+                        this.error(`[${this.cam}] Event snapshot fetch failed (${snapUrl}):`, err);
                         imageStream.end((_a = this.latestSnapshot) !== null && _a !== void 0 ? _a : Buffer.alloc(0));
                     }
                 });
                 eventSnapshot = img;
             }
             catch (err) {
-                this.error('Failed to create event image:', err);
+                this.error(`[${this.cam}] Failed to create event image:`, err);
             }
         }
         const triggerTokens = {
-            label: (_d = ev.label) !== null && _d !== void 0 ? _d : '',
-            sub_label: (_e = ev.sub_label) !== null && _e !== void 0 ? _e : '',
+            label: (_l = ev.label) !== null && _l !== void 0 ? _l : '',
+            sub_label: (_m = ev.sub_label) !== null && _m !== void 0 ? _m : '',
             zones,
-            score: Math.round(((_g = (_f = ev.top_score) !== null && _f !== void 0 ? _f : ev.score) !== null && _g !== void 0 ? _g : 0) * 100),
+            score,
             event_id: ev.id,
             snapshot_url: snapUrl,
             clip_url: this.clipUrl(ev.id),
             snapshot: eventSnapshot,
             device_name: this.getName(),
         };
+        this.log(`[${this.cam}] TRIGGER object-detected — id=${ev.id} label="${ev.label}" sub_label="${(_o = ev.sub_label) !== null && _o !== void 0 ? _o : '-'}" score=${score}% zones=[${zones || 'none'}]`);
         this.homey.flow.getDeviceTriggerCard('object-detected')
             .trigger(this, triggerTokens)
-            .catch((err) => this.error('object-detected trigger error:', err));
+            .catch((err) => this.error(`[${this.cam}] object-detected trigger error:`, err));
         this.homey.flow.getTriggerCard('object-detected-any')
             .trigger(triggerTokens)
-            .catch((err) => this.error('object-detected-any trigger error:', err));
+            .catch((err) => this.error(`[${this.cam}] object-detected-any trigger error:`, err));
         if (this.seenEventIds.size > 500) {
             this.seenEventIds = new Set([...this.seenEventIds].slice(-250));
         }
@@ -373,20 +399,26 @@ class CameraDevice extends homey_1.default.Device {
         const rev = msg.after;
         if (rev.camera !== this.cam)
             return;
-        if (this.seenReviewIds.has(rev.id))
+        if (this.seenReviewIds.has(rev.id)) {
+            this.log(`[${this.cam}] Review ${rev.id} discarded — duplicate`);
             return;
+        }
         this.seenReviewIds.add(rev.id);
         if (!rev.has_been_reviewed) {
             this.unreviewedCount++;
             this.setCapabilityValue('unreviewed_alerts', this.unreviewedCount).catch(() => { });
+            this.log(`[${this.cam}] Unreviewed alert count: ${this.unreviewedCount}`);
         }
         if (rev.severity === 'alert') {
+            const objects = ((_b = (_a = rev.data) === null || _a === void 0 ? void 0 : _a.objects) !== null && _b !== void 0 ? _b : []).join(', ');
+            const zones = ((_d = (_c = rev.data) === null || _c === void 0 ? void 0 : _c.zones) !== null && _d !== void 0 ? _d : []).join(', ');
+            this.log(`[${this.cam}] TRIGGER review-alert — id=${rev.id} severity=${rev.severity} objects=[${objects || 'none'}] zones=[${zones || 'none'}]`);
             this.homey.flow.getDeviceTriggerCard('review-alert').trigger(this, {
                 review_id: rev.id,
                 severity: rev.severity,
-                objects: ((_b = (_a = rev.data) === null || _a === void 0 ? void 0 : _a.objects) !== null && _b !== void 0 ? _b : []).join(', '),
-                zones: ((_d = (_c = rev.data) === null || _c === void 0 ? void 0 : _c.zones) !== null && _d !== void 0 ? _d : []).join(', '),
-            }).catch((err) => this.error('review-alert trigger error:', err));
+                objects,
+                zones,
+            }).catch((err) => this.error(`[${this.cam}] review-alert trigger error:`, err));
         }
         if (this.seenReviewIds.size > 500) {
             this.seenReviewIds = new Set([...this.seenReviewIds].slice(-250));
@@ -399,8 +431,8 @@ class CameraDevice extends homey_1.default.Device {
         const key = label.trim().toLowerCase();
         const timestamps = (_a = this.recentDetections.get(key)) !== null && _a !== void 0 ? _a : [];
         const fresh = timestamps.filter((t) => t >= cutoff);
-        // Prune stale entries while we're here
         this.recentDetections.set(key, fresh);
+        this.log(`[${this.cam}] Condition label-detected-recently: label="${key}" window=${minutes}min → ${fresh.length} detection(s) found`);
         return fresh.length > 0;
     }
     hasUnreviewedAlerts() {
@@ -410,6 +442,7 @@ class CameraDevice extends homey_1.default.Device {
     pub(topic, payload = '') {
         if (!this.mqtt)
             throw new Error('MQTT not connected');
+        this.log(`[${this.cam}] MQTT publish → ${topic}${payload ? ` = ${payload}` : ''}`);
         this.mqtt.publish(topic, payload);
     }
     restart() { this.pub(`${this.p}/restart`); }
@@ -421,11 +454,11 @@ class CameraDevice extends homey_1.default.Device {
     }
     // ---------- Lifecycle ----------
     async onAdded() {
-        this.log(`Camera "${this.cam}" added`);
+        this.log(`[${this.cam}] Device added to Homey`);
     }
-    async onSettings({}) {
+    async onSettings({ changedKeys }) {
         var _a;
-        this.log('Settings changed — reconnecting MQTT');
+        this.log(`[${this.cam}] Settings changed (${changedKeys.join(', ')}) — reconnecting`);
         this.stopMQTT();
         this.stopLiveStreamTimer();
         this.loadSettings();
@@ -435,15 +468,16 @@ class CameraDevice extends homey_1.default.Device {
         this.labelImages.clear();
         this.labelBuffers.clear();
         this.unreviewedCount = 0;
+        this.lastTriggerFiredAt = 0;
         this.startMQTT();
         (_a = this.cameraImage) === null || _a === void 0 ? void 0 : _a.update().catch(() => { });
         await this.initLiveStreamImage();
     }
     async onRenamed(name) {
-        this.log(`Renamed to "${name}"`);
+        this.log(`[${this.cam}] Renamed to "${name}"`);
     }
     async onDeleted() {
-        this.log(`Camera "${this.cam}" deleted`);
+        this.log(`[${this.cam}] Device deleted`);
         this.destroyed = true;
         this.stopMQTT();
         this.stopLiveStreamTimer();
