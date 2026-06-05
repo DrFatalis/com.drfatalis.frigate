@@ -13,5 +13,8 @@
   },
   "1.0.4": {
     "en": "Fix trigger issue and implement a app level trigger for object detection"
+  },
+  "1.0.5": {
+    "en": "Fix snapshot fetch in case frigate doesn't have any. Moved to the \"end\" event trigger"
   }
 }
