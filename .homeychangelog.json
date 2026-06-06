@@ -19,5 +19,8 @@
   },
   "1.0.6": {
     "en": "Live stream support Frigate go2RTC (Warning: go2rtc stream name needs to match the camera name)"
+  },
+  "1.0.7": {
+    "en": "New trigger: Alert - Object detected"
   }
 }

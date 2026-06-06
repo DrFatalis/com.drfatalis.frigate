@@ -1,6 +1,6 @@
 {
   "id": "com.drfatalis.frigate",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "compatibility": ">=5.0.0",
   "sdk": 3,
   "brandColor": "#00a0e1",
@@ -202,54 +202,72 @@
           {
             "name": "label",
             "type": "string",
-            "title": { "en": "Label" },
+            "title": {
+              "en": "Label"
+            },
             "example": "person"
           },
           {
             "name": "sub_label",
             "type": "string",
-            "title": { "en": "Sub-label" },
+            "title": {
+              "en": "Sub-label"
+            },
             "example": "John Doe"
           },
           {
             "name": "zones",
             "type": "string",
-            "title": { "en": "Zones" },
+            "title": {
+              "en": "Zones"
+            },
             "example": "driveway, yard"
           },
           {
             "name": "score",
             "type": "number",
-            "title": { "en": "Confidence (%)" },
+            "title": {
+              "en": "Confidence (%)"
+            },
             "example": 87
           },
           {
             "name": "event_id",
             "type": "string",
-            "title": { "en": "Event ID" },
+            "title": {
+              "en": "Event ID"
+            },
             "example": "1a2b3c4d-5678"
           },
           {
             "name": "snapshot_url",
             "type": "string",
-            "title": { "en": "Snapshot URL" },
+            "title": {
+              "en": "Snapshot URL"
+            },
             "example": "http://192.168.1.100:5000/api/events/abc-123/snapshot.jpg"
           },
           {
             "name": "clip_url",
             "type": "string",
-            "title": { "en": "Clip URL" },
+            "title": {
+              "en": "Clip URL"
+            },
             "example": "http://192.168.1.100:5000/api/events/abc-123/clip.mp4"
           },
           {
             "name": "snapshot",
             "type": "image",
-            "title": { "en": "Snapshot" }
+            "title": {
+              "en": "Snapshot"
+            }
           },
           {
             "name": "device_name",
             "type": "string",
-            "title": { "en": "Device name" },
+            "title": {
+              "en": "Device name"
+            },
             "example": "Front Door Camera"
           }
         ],
