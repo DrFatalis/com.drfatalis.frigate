@@ -27,6 +27,9 @@ class CameraDevice extends homey_1.default.Device {
         this.cameraImage = null;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         this.liveVideo = null;
+        // Last object-detected tokens, held for up to 60 s to correlate with a review alert
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.lastDetectionTokens = null;
         // In-memory rolling window: label → array of unix timestamps (seconds)
         this.recentDetections = new Map();
         // Per-label snapshot images for the device-card image picker
@@ -357,6 +360,7 @@ class CameraDevice extends homey_1.default.Device {
         this.homey.flow.getTriggerCard('object-detected-any')
             .trigger(triggerTokens)
             .catch((err) => this.error(`[${this.cam}] object-detected-any trigger error:`, err));
+        this.lastDetectionTokens = { tokens: triggerTokens, ts: Date.now() };
         if (this.seenEventIds.size > 500) {
             this.seenEventIds = new Set([...this.seenEventIds].slice(-250));
         }
@@ -395,6 +399,16 @@ class CameraDevice extends homey_1.default.Device {
                 objects,
                 zones,
             }).catch((err) => this.error(`[${this.cam}] review-alert trigger error:`, err));
+            const cached = this.lastDetectionTokens;
+            if (cached && Date.now() - cached.ts < 30000) {
+                this.log(`[${this.cam}] TRIGGER alert-object-detected — correlated with event ${cached.tokens.event_id}`);
+                this.homey.flow.getDeviceTriggerCard('alert-object-detected')
+                    .trigger(this, cached.tokens)
+                    .catch((err) => this.error(`[${this.cam}] alert-object-detected trigger error:`, err));
+            }
+            else {
+                this.log(`[${this.cam}] review-alert: no recent detection to correlate (cache ${cached ? 'stale' : 'empty'})`);
+            }
         }
         if (this.seenReviewIds.size > 500) {
             this.seenReviewIds = new Set([...this.seenReviewIds].slice(-250));

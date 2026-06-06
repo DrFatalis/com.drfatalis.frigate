@@ -70,6 +70,10 @@ class CameraDevice extends Homey.Device {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private liveVideo: any = null;
 
+  // Last object-detected tokens, held for up to 60 s to correlate with a review alert
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private lastDetectionTokens: { tokens: Record<string, any>; ts: number } | null = null;
+
   // In-memory rolling window: label → array of unix timestamps (seconds)
   private recentDetections: Map<string, number[]> = new Map();
 
@@ -427,6 +431,8 @@ class CameraDevice extends Homey.Device {
       .trigger(triggerTokens)
       .catch((err: unknown) => this.error(`[${this.cam}] object-detected-any trigger error:`, err));
 
+    this.lastDetectionTokens = { tokens: triggerTokens, ts: Date.now() };
+
     if (this.seenEventIds.size > 500) {
       this.seenEventIds = new Set([...this.seenEventIds].slice(-250));
     }
@@ -462,6 +468,16 @@ class CameraDevice extends Homey.Device {
         objects,
         zones,
       }).catch((err: unknown) => this.error(`[${this.cam}] review-alert trigger error:`, err));
+
+      const cached = this.lastDetectionTokens;
+      if (cached && Date.now() - cached.ts < 30_000) {
+        this.log(`[${this.cam}] TRIGGER alert-object-detected — correlated with event ${cached.tokens.event_id}`);
+        this.homey.flow.getDeviceTriggerCard('alert-object-detected')
+          .trigger(this, cached.tokens)
+          .catch((err: unknown) => this.error(`[${this.cam}] alert-object-detected trigger error:`, err));
+      } else {
+        this.log(`[${this.cam}] review-alert: no recent detection to correlate (cache ${cached ? 'stale' : 'empty'})`);
+      }
     }
 
     if (this.seenReviewIds.size > 500) {
