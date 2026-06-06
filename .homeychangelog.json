@@ -16,5 +16,8 @@
   },
   "1.0.5": {
     "en": "Fix snapshot fetch in case frigate doesn't have any. Moved to the \"end\" event trigger"
+  },
+  "1.0.6": {
+    "en": "Live stream support Frigate go2RTC (Warning: go2rtc stream name needs to match the camera name)"
   }
 }
