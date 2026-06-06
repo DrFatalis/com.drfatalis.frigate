@@ -18,18 +18,15 @@ class CameraDevice extends homey_1.default.Device {
             camera_name: '',
             frigate_url: '',
             frigate_local_url: '',
+            go2rtc_http_port: 1984,
             label_filter: '',
-            live_stream_interval: 500,
             event_trigger_delay: 5,
         };
         this.mqtt = null;
-        this.destroyed = false;
-        this.latestSnapshot = null;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         this.cameraImage = null;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        this.liveStreamImage = null;
-        this.liveStreamTimer = null;
+        this.liveVideo = null;
         // In-memory rolling window: label → array of unix timestamps (seconds)
         this.recentDetections = new Map();
         // Per-label snapshot images for the device-card image picker
@@ -104,7 +101,7 @@ class CameraDevice extends homey_1.default.Device {
         await this.setCapabilityValue('event_count', 0);
         await this.setCapabilityValue('unreviewed_alerts', 0);
         await this.initCameraImage();
-        await this.initLiveStreamImage();
+        await this.initLiveVideo();
         this.startMQTT();
     }
     async initCameraImage() {
@@ -124,9 +121,6 @@ class CameraDevice extends homey_1.default.Device {
                         imageStream.end();
                     }
                 }
-                else if (this.latestSnapshot) {
-                    imageStream.end(this.latestSnapshot);
-                }
                 else {
                     imageStream.end();
                 }
@@ -138,58 +132,42 @@ class CameraDevice extends homey_1.default.Device {
             this.error(`[${this.cam}] Failed to create camera image:`, err);
         }
     }
-    async initLiveStreamImage() {
+    async initLiveVideo() {
         var _a;
         const base = this.settings.frigate_local_url;
         if (!base) {
-            this.log(`[${this.cam}] No local URL configured — live stream image skipped`);
+            this.log(`[${this.cam}] No local URL configured — live video skipped`);
             return;
         }
+        let hostname;
         try {
-            if (!this.liveStreamImage) {
-                this.liveStreamImage = await this.homey.images.createImage();
-                await this.setCameraImage('live_stream', 'Live Stream', this.liveStreamImage);
-            }
-            if (base.startsWith('https://')) {
-                this.stopLiveStreamTimer();
-                this.liveStreamImage.setUrl(`${base}/api/${this.cam}/stream`);
-                this.log(`[${this.cam}] Live stream: HTTPS MJPEG mode → ${base}/api/${this.cam}/stream`);
-            }
-            else {
-                this.liveStreamImage.setStream(async (imageStream) => {
-                    const url = `${base}/api/${this.cam}/latest.jpg`;
-                    try {
-                        const buffer = await this.fetchBuffer(url);
-                        imageStream.end(buffer);
-                    }
-                    catch (err) {
-                        this.error(`[${this.cam}] Live stream fetch failed (${url}):`, err);
-                        imageStream.end();
-                    }
-                });
-                const interval = Math.max(200, (_a = this.settings.live_stream_interval) !== null && _a !== void 0 ? _a : 500);
-                this.startLiveStreamTimer();
-                this.log(`[${this.cam}] Live stream: HTTP poll mode, interval ${interval}ms`);
-            }
-            this.liveStreamImage.update().catch(() => { });
+            hostname = new URL(base).hostname;
+        }
+        catch {
+            this.error(`[${this.cam}] Cannot parse frigate_local_url: ${base}`);
+            return;
+        }
+        const port = (_a = this.settings.go2rtc_http_port) !== null && _a !== void 0 ? _a : 1984;
+        const hlsUrl = `http://${hostname}:${port}/api/stream.m3u8?src=${this.cam}`;
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            this.liveVideo = await this.homey.videos.createVideoHLS();
+            this.liveVideo.registerVideoUrlListener(async () => ({ url: hlsUrl }));
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await this.setCameraVideo('live', 'Live Stream', this.liveVideo);
+            this.log(`[${this.cam}] Live HLS video registered → ${hlsUrl}`);
         }
         catch (err) {
-            this.error(`[${this.cam}] Failed to create live stream image:`, err);
+            this.error(`[${this.cam}] Failed to register live video:`, err);
         }
     }
-    startLiveStreamTimer() {
-        var _a;
-        this.stopLiveStreamTimer();
-        const interval = Math.max(200, (_a = this.settings.live_stream_interval) !== null && _a !== void 0 ? _a : 500);
-        this.liveStreamTimer = setInterval(() => {
-            var _a;
-            (_a = this.liveStreamImage) === null || _a === void 0 ? void 0 : _a.update().catch(() => { });
-        }, interval);
-    }
-    stopLiveStreamTimer() {
-        if (this.liveStreamTimer !== null) {
-            clearInterval(this.liveStreamTimer);
-            this.liveStreamTimer = null;
+    async stopLiveVideo() {
+        if (this.liveVideo) {
+            try {
+                await this.liveVideo.unregister();
+            }
+            catch { /* ignore */ }
+            this.liveVideo = null;
         }
     }
     async updateLabelImage(label) {
@@ -259,7 +237,6 @@ class CameraDevice extends homey_1.default.Device {
             this.mqtt.subscribe(`${this.p}/reviews`, (_t, payload) => this.handleReview(payload));
             this.mqtt.subscribeBinary(`${this.p}/${this.cam}/+/snapshot`, (topic, payload) => {
                 var _a;
-                this.latestSnapshot = payload;
                 (_a = this.cameraImage) === null || _a === void 0 ? void 0 : _a.update().catch(() => { });
                 const parts = topic.split('/');
                 const label = parts[parts.length - 2];
@@ -346,7 +323,6 @@ class CameraDevice extends homey_1.default.Device {
             try {
                 const img = await this.homey.images.createImage();
                 img.setStream(async (imageStream) => {
-                    var _a;
                     try {
                         const buffer = await this.fetchBuffer(snapUrl);
                         imageStream.end(buffer);
@@ -354,7 +330,7 @@ class CameraDevice extends homey_1.default.Device {
                     }
                     catch (err) {
                         this.error(`[${this.cam}] Event snapshot fetch failed (${snapUrl}):`, err);
-                        imageStream.end((_a = this.latestSnapshot) !== null && _a !== void 0 ? _a : Buffer.alloc(0));
+                        imageStream.end();
                     }
                 });
                 eventSnapshot = img;
@@ -460,7 +436,7 @@ class CameraDevice extends homey_1.default.Device {
         var _a;
         this.log(`[${this.cam}] Settings changed (${changedKeys.join(', ')}) — reconnecting`);
         this.stopMQTT();
-        this.stopLiveStreamTimer();
+        await this.stopLiveVideo();
         this.loadSettings();
         this.seenEventIds.clear();
         this.seenReviewIds.clear();
@@ -471,16 +447,15 @@ class CameraDevice extends homey_1.default.Device {
         this.lastTriggerFiredAt = 0;
         this.startMQTT();
         (_a = this.cameraImage) === null || _a === void 0 ? void 0 : _a.update().catch(() => { });
-        await this.initLiveStreamImage();
+        await this.initLiveVideo();
     }
     async onRenamed(name) {
         this.log(`[${this.cam}] Renamed to "${name}"`);
     }
     async onDeleted() {
         this.log(`[${this.cam}] Device deleted`);
-        this.destroyed = true;
         this.stopMQTT();
-        this.stopLiveStreamTimer();
+        await this.stopLiveVideo();
     }
 }
 module.exports = CameraDevice;

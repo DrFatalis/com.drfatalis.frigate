@@ -536,11 +536,27 @@
           "id": "frigate_local_url",
           "type": "text",
           "label": {
-            "en": "Frigate local URL (optional — for live camera image)"
+            "en": "Frigate local URL (optional — for snapshot image)"
           },
           "value": "",
           "hint": {
-            "en": "Internal URL without auth used to fetch the live image on the device card. e.g. http://192.168.1.100:5000"
+            "en": "Internal URL used to fetch the snapshot image on the device card. e.g. http://192.168.1.100:5000"
+          }
+        },
+        {
+          "id": "go2rtc_http_port",
+          "type": "number",
+          "label": {
+            "en": "go2rtc HTTP port"
+          },
+          "value": 1984,
+          "hint": {
+            "en": "go2rtc HTTP port. Used for cameras routed through go2rtc internally. Default is 1984."
+          },
+          "attr": {
+            "min": 1,
+            "max": 65535,
+            "step": 1
           }
         },
         {
@@ -552,22 +568,6 @@
           "value": "",
           "hint": {
             "en": "Only fire the object-detected trigger for these labels, e.g. person,car,dog"
-          }
-        },
-        {
-          "id": "live_stream_interval",
-          "type": "number",
-          "label": {
-            "en": "Live stream refresh interval (ms)"
-          },
-          "value": 500,
-          "hint": {
-            "en": "How often the live stream image refreshes, in milliseconds (HTTP only). Minimum 200."
-          },
-          "attr": {
-            "min": 200,
-            "max": 5000,
-            "step": 100
           }
         },
         {
