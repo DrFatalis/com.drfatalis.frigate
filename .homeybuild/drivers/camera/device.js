@@ -27,9 +27,6 @@ class CameraDevice extends homey_1.default.Device {
         this.cameraImage = null;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         this.liveVideo = null;
-        // Last object-detected tokens, held for up to 60 s to correlate with a review alert
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        this.lastDetectionTokens = null;
         // In-memory rolling window: label → array of unix timestamps (seconds)
         this.recentDetections = new Map();
         // Per-label snapshot images for the device-card image picker
@@ -43,7 +40,8 @@ class CameraDevice extends homey_1.default.Device {
         this.dailyCountDate = new Date().getDate();
         // Dedup guards
         this.seenEventIds = new Set();
-        this.seenReviewIds = new Set();
+        this.seenReviewIds = new Set(); // type:"new"
+        this.seenEndReviewIds = new Set(); // type:"end"
         // Cooldown: unix ms timestamp of the last fired object-detected trigger
         this.lastTriggerFiredAt = 0;
         // Prevents re-registering MQTT handlers on every reconnect
@@ -60,6 +58,10 @@ class CameraDevice extends homey_1.default.Device {
     }
     get p() { return this.settings.mqtt_topic_prefix; }
     get cam() { return this.settings.camera_name; }
+    isDebugMqtt() {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return this.homey.app.isDebugMqtt();
+    }
     get labelFilter() {
         var _a;
         if (!((_a = this.settings.label_filter) === null || _a === void 0 ? void 0 : _a.trim()))
@@ -191,6 +193,16 @@ class CameraDevice extends homey_1.default.Device {
     startMQTT() {
         this.log(`[${this.cam}] Starting MQTT client → ${this.settings.mqtt_url}`);
         this.mqtt = new MQTTClient_1.FrigateMQTTClient(this.settings.mqtt_url, this.settings.mqtt_username || undefined, this.settings.mqtt_password || undefined);
+        this.mqtt.onRawMessage = (topic, payload) => {
+            if (!this.isDebugMqtt())
+                return;
+            const str = payload.toString('utf8');
+            const isPrintable = /^[\x09\x0A\x0D\x20-\x7E]*$/.test(str);
+            const display = isPrintable ? str.slice(0, 500) : `[binary: ${payload.length} bytes]`;
+            const line = `[${this.cam}] ← ${topic}: ${display}`;
+            this.log(`[MQTT DEBUG] ${line}`);
+            this.homey.app.addDebugLog(line);
+        };
         this.mqtt.connect(() => this.onMQTTConnected(), () => this.onMQTTDisconnected());
     }
     stopMQTT() {
@@ -237,7 +249,9 @@ class CameraDevice extends homey_1.default.Device {
             this.mqtt.subscribe(`${this.p}/events`, (_t, payload) => {
                 this.handleEvent(payload).catch((err) => this.error(`[${this.cam}] handleEvent error:`, err));
             });
-            this.mqtt.subscribe(`${this.p}/reviews`, (_t, payload) => this.handleReview(payload));
+            this.mqtt.subscribe(`${this.p}/reviews`, (_t, payload) => {
+                this.handleReview(payload).catch((err) => this.error(`[${this.cam}] handleReview error:`, err));
+            });
             this.mqtt.subscribeBinary(`${this.p}/${this.cam}/+/snapshot`, (topic, payload) => {
                 var _a;
                 (_a = this.cameraImage) === null || _a === void 0 ? void 0 : _a.update().catch(() => { });
@@ -360,13 +374,12 @@ class CameraDevice extends homey_1.default.Device {
         this.homey.flow.getTriggerCard('object-detected-any')
             .trigger(triggerTokens)
             .catch((err) => this.error(`[${this.cam}] object-detected-any trigger error:`, err));
-        this.lastDetectionTokens = { tokens: triggerTokens, ts: Date.now() };
         if (this.seenEventIds.size > 500) {
             this.seenEventIds = new Set([...this.seenEventIds].slice(-250));
         }
     }
-    handleReview(payload) {
-        var _a, _b, _c, _d;
+    async handleReview(payload) {
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q;
         let msg;
         try {
             msg = JSON.parse(payload);
@@ -374,44 +387,91 @@ class CameraDevice extends homey_1.default.Device {
         catch {
             return;
         }
-        if (msg.type !== 'new')
+        if (msg.type !== 'new' && msg.type !== 'end')
             return;
         const rev = msg.after;
         if (rev.camera !== this.cam)
             return;
-        if (this.seenReviewIds.has(rev.id)) {
-            this.log(`[${this.cam}] Review ${rev.id} discarded — duplicate`);
+        if (msg.type === 'new') {
+            if (this.seenReviewIds.has(rev.id)) {
+                this.log(`[${this.cam}] Review ${rev.id} (new) discarded — duplicate`);
+                return;
+            }
+            this.seenReviewIds.add(rev.id);
+            if (!rev.has_been_reviewed) {
+                this.unreviewedCount++;
+                this.setCapabilityValue('unreviewed_alerts', this.unreviewedCount).catch(() => { });
+                this.log(`[${this.cam}] Unreviewed alert count: ${this.unreviewedCount}`);
+            }
+            if (rev.severity === 'alert') {
+                const objects = ((_b = (_a = rev.data) === null || _a === void 0 ? void 0 : _a.objects) !== null && _b !== void 0 ? _b : []).join(', ');
+                const zones = ((_d = (_c = rev.data) === null || _c === void 0 ? void 0 : _c.zones) !== null && _d !== void 0 ? _d : []).join(', ');
+                this.log(`[${this.cam}] TRIGGER review-alert — id=${rev.id} objects=[${objects || 'none'}] zones=[${zones || 'none'}]`);
+                this.homey.flow.getDeviceTriggerCard('review-alert').trigger(this, {
+                    review_id: rev.id,
+                    severity: rev.severity,
+                    objects,
+                    zones,
+                }).catch((err) => this.error(`[${this.cam}] review-alert trigger error:`, err));
+            }
+            if (this.seenReviewIds.size > 500) {
+                this.seenReviewIds = new Set([...this.seenReviewIds].slice(-250));
+            }
             return;
         }
-        this.seenReviewIds.add(rev.id);
-        if (!rev.has_been_reviewed) {
-            this.unreviewedCount++;
-            this.setCapabilityValue('unreviewed_alerts', this.unreviewedCount).catch(() => { });
-            this.log(`[${this.cam}] Unreviewed alert count: ${this.unreviewedCount}`);
+        // type:"end" — review segment is finalized; snapshot with bboxes is now available
+        if (rev.severity !== 'alert')
+            return;
+        if (this.seenEndReviewIds.has(rev.id)) {
+            this.log(`[${this.cam}] Review ${rev.id} (end) discarded — duplicate`);
+            return;
         }
-        if (rev.severity === 'alert') {
-            const objects = ((_b = (_a = rev.data) === null || _a === void 0 ? void 0 : _a.objects) !== null && _b !== void 0 ? _b : []).join(', ');
-            const zones = ((_d = (_c = rev.data) === null || _c === void 0 ? void 0 : _c.zones) !== null && _d !== void 0 ? _d : []).join(', ');
-            this.log(`[${this.cam}] TRIGGER review-alert — id=${rev.id} severity=${rev.severity} objects=[${objects || 'none'}] zones=[${zones || 'none'}]`);
-            this.homey.flow.getDeviceTriggerCard('review-alert').trigger(this, {
-                review_id: rev.id,
-                severity: rev.severity,
-                objects,
-                zones,
-            }).catch((err) => this.error(`[${this.cam}] review-alert trigger error:`, err));
-            const cached = this.lastDetectionTokens;
-            if (cached && Date.now() - cached.ts < 30000) {
-                this.log(`[${this.cam}] TRIGGER alert-object-detected — correlated with event ${cached.tokens.event_id}`);
-                this.homey.flow.getDeviceTriggerCard('alert-object-detected')
-                    .trigger(this, cached.tokens)
-                    .catch((err) => this.error(`[${this.cam}] alert-object-detected trigger error:`, err));
+        this.seenEndReviewIds.add(rev.id);
+        const primaryEventId = (_g = ((_f = (_e = rev.data) === null || _e === void 0 ? void 0 : _e.detections) !== null && _f !== void 0 ? _f : [])[0]) !== null && _g !== void 0 ? _g : null;
+        const label = (_k = ((_j = (_h = rev.data) === null || _h === void 0 ? void 0 : _h.objects) !== null && _j !== void 0 ? _j : [])[0]) !== null && _k !== void 0 ? _k : '';
+        const subLabel = (_o = ((_m = (_l = rev.data) === null || _l === void 0 ? void 0 : _l.sub_labels) !== null && _m !== void 0 ? _m : [])[0]) !== null && _o !== void 0 ? _o : '';
+        const zones = ((_q = (_p = rev.data) === null || _p === void 0 ? void 0 : _p.zones) !== null && _q !== void 0 ? _q : []).join(', ');
+        const snapUrl = primaryEventId ? this.snapshotUrl(primaryEventId) : '';
+        const clipUrl = primaryEventId ? this.clipUrl(primaryEventId) : '';
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let alertSnapshot = this.cameraImage;
+        if (snapUrl) {
+            try {
+                const img = await this.homey.images.createImage();
+                img.setStream(async (imageStream) => {
+                    try {
+                        const buffer = await this.fetchBuffer(snapUrl);
+                        imageStream.end(buffer);
+                        this.log(`[${this.cam}] Alert snapshot fetch succeeded (${snapUrl})`);
+                    }
+                    catch (err) {
+                        this.error(`[${this.cam}] Alert snapshot fetch failed (${snapUrl}):`, err);
+                        imageStream.end();
+                    }
+                });
+                alertSnapshot = img;
             }
-            else {
-                this.log(`[${this.cam}] review-alert: no recent detection to correlate (cache ${cached ? 'stale' : 'empty'})`);
+            catch (err) {
+                this.error(`[${this.cam}] Failed to create alert image:`, err);
             }
         }
-        if (this.seenReviewIds.size > 500) {
-            this.seenReviewIds = new Set([...this.seenReviewIds].slice(-250));
+        const alertTokens = {
+            label,
+            sub_label: subLabel,
+            zones,
+            score: 0,
+            event_id: primaryEventId !== null && primaryEventId !== void 0 ? primaryEventId : '',
+            snapshot_url: snapUrl,
+            clip_url: clipUrl,
+            snapshot: alertSnapshot,
+            device_name: this.getName(),
+        };
+        this.log(`[${this.cam}] TRIGGER alert-object-detected — review=${rev.id} event=${primaryEventId !== null && primaryEventId !== void 0 ? primaryEventId : 'none'} label="${label}" sub_label="${subLabel || '-'}" zones=[${zones || 'none'}]`);
+        this.homey.flow.getDeviceTriggerCard('alert-object-detected')
+            .trigger(this, alertTokens)
+            .catch((err) => this.error(`[${this.cam}] alert-object-detected trigger error:`, err));
+        if (this.seenEndReviewIds.size > 500) {
+            this.seenEndReviewIds = new Set([...this.seenEndReviewIds].slice(-250));
         }
     }
     // ---------- Flow condition handlers ----------
@@ -454,6 +514,7 @@ class CameraDevice extends homey_1.default.Device {
         this.loadSettings();
         this.seenEventIds.clear();
         this.seenReviewIds.clear();
+        this.seenEndReviewIds.clear();
         this.recentDetections.clear();
         this.labelImages.clear();
         this.labelBuffers.clear();

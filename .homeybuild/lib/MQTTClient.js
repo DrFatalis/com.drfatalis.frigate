@@ -45,6 +45,8 @@ class FrigateMQTTClient {
             (_a = this.onConnectCb) === null || _a === void 0 ? void 0 : _a.call(this);
         });
         this.client.on('message', (topic, payload) => {
+            var _a;
+            (_a = this.onRawMessage) === null || _a === void 0 ? void 0 : _a.call(this, topic, payload);
             // String handlers — for JSON/text topics
             const msg = payload.toString();
             for (const [pattern, handlers] of this.subscriptions.entries()) {

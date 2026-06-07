@@ -16,6 +16,8 @@ export class FrigateMQTTClient {
   private onConnectCb?: () => void;
   private onDisconnectCb?: () => void;
 
+  onRawMessage?: (topic: string, payload: Buffer) => void;
+
   constructor(
     private readonly brokerUrl: string,
     private readonly username?: string,
@@ -49,6 +51,7 @@ export class FrigateMQTTClient {
     });
 
     this.client.on('message', (topic: string, payload: Buffer) => {
+      this.onRawMessage?.(topic, payload);
       // String handlers — for JSON/text topics
       const msg = payload.toString();
       for (const [pattern, handlers] of this.subscriptions.entries()) {
