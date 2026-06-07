@@ -22,5 +22,8 @@
   },
   "1.0.7": {
     "en": "New trigger: Alert - Object detected"
+  },
+  "1.0.8": {
+    "en": "fix alert trigger & add app logs in app settings"
   }
 }
